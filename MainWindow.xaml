@@ -17,7 +17,10 @@
         Closed="Window_Closed"
         SizeChanged="Window_SizeChanged"
         SourceInitialized="Window_SourceInitialized"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        AllowDrop="True"
+        PreviewDragOver="Window_PreviewDragOver"
+        PreviewDrop="Window_PreviewDrop">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="46"
                             ResizeBorderThickness="6"

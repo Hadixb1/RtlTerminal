@@ -1412,20 +1412,7 @@ public sealed class TerminalBuffer
             _snapshotCells = new Cell[_rows, _columns];
             _snapshotLines = new TerminalLine?[_rows];
         }
-        var lastVisibleRow = _alternateScreenActive
-            ? _rows - 1
-            : _cursorRow;
-
-        for (var row = _rows - 1;
-             !_alternateScreenActive && row >= 0;
-             row--)
-        {
-            if (FindLastCharacter(row) >= 0)
-            {
-                lastVisibleRow = Math.Max(lastVisibleRow, row);
-                break;
-            }
-        }
+        var lastVisibleRow = _rows - 1;
 
         var lines = new List<TerminalLine>(
             (_alternateScreenActive ? 0 : _scrollback.Count) +

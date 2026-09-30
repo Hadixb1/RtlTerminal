@@ -403,8 +403,7 @@ ApplySavedFontSettings();
 
         e.Handled = true;
         _suppressRightMouseUp = true;
-        if (TerminalTextBox.HasSelection) CopySelection();
-        else PasteClipboard();
+        PasteClipboard();
         TerminalTextBox.Focus();
     }
 
@@ -425,7 +424,6 @@ ApplySavedFontSettings();
         object sender,
         MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Right && TerminalTextBox.HasSelection) return;
         var button = GetMouseButtonCode(e.ChangedButton);
 
         if (button < 0 || !SendMouseEvent(e, button, released: false))
@@ -1373,6 +1371,32 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             Key.Escape => "\x1b",
             _ => null
         };
+    }
+
+    
+    private void Window_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+    }
+
+    private void Window_PreviewDrop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
+            {
+                WriteClipboardPaths(files);
+            }
+            e.Handled = true;
+        }
     }
 
     private void CopySelection()

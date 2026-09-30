@@ -72,7 +72,7 @@ public sealed class TerminalView : ContentControl
         _surface.AddHandler(Mouse.MouseMoveEvent, new MouseEventHandler((_, e) =>
         {
             var link = LinkAt(e.GetPosition(_surface));
-            _surface.ToolTip = link is null ? null : "Ctrl + Left Click to open link";
+            _surface.ToolTip = link is null ? null : "Click to open link";
             if (link is null) _surface.ClearValue(CursorProperty);
             else _surface.Cursor = Cursors.Hand;
         }), true);
@@ -82,6 +82,7 @@ public sealed class TerminalView : ContentControl
             if (!_dragging) return;
             _dragging = false;
             _surface.ReleaseMouseCapture();
+            if (HasSelection) CopySelection(false);
             e.Handled = true;
         };
     }
@@ -181,11 +182,11 @@ public sealed class TerminalView : ContentControl
         _surface.InvalidateVisual();
     }
 
-    public void CopySelection()
+    public void CopySelection(bool clear = true)
     {
         if (!HasSelection || _snapshot is null) return;
         Clipboard.SetDataObject(GetSelectedText(), true);
-        ClearSelection();
+        if (clear) ClearSelection();
     }
 
     public string GetSelectedText()
@@ -236,7 +237,7 @@ public sealed class TerminalView : ContentControl
         Focus();
         var hit = Hit(e.GetPosition(_surface));
         if (hit is null) return;
-        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && LinkAt(e.GetPosition(_surface)) is { } uri)
+        if (LinkAt(e.GetPosition(_surface)) is { } uri)
         {
             LinkRequested?.Invoke(uri);
             e.Handled = true;
@@ -410,7 +411,7 @@ public sealed class TerminalView : ContentControl
                 var column = 0; DrawCell? cursor = null;
                 foreach (var cell in layout.Cells.OrderBy(cell => cell.Start))
                 { if (_snapshot.CursorColumn >= column && _snapshot.CursorColumn < column + cell.GridWidth / _cellWidth) { cursor = cell; break; } column += (int)Math.Round(cell.GridWidth / _cellWidth); }
-                var rect = new Rect(cursor?.X ?? _snapshot.CursorColumn * _cellWidth, y, Math.Max(_cellWidth, cursor?.Width ?? _cellWidth), _lineHeight);
+                var rect = new Rect(cursor?.X ?? _snapshot.CursorColumn * _cellWidth, y, 2.0, _lineHeight);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(90, 230, 230, 230)), new Pen(Brushes.LightGray, 1), rect);
             }
         }
