@@ -167,7 +167,9 @@ public sealed class TerminalView : ContentControl
             {
                 var fraction = (visualX - cell.X) / cell.Width;
                 if (cell.Rtl) fraction = 1 - fraction;
-                return column + Math.Clamp((int)(fraction * columns), 0, Math.Max(0, columns - 1));
+                // Round to the nearest logical boundary so clicking the trailing half of a character
+                // places the cursor after it, just like a text editor.
+                return column + Math.Clamp((int)Math.Round(fraction * columns), 0, columns);
             }
             column += columns;
         }
@@ -411,7 +413,9 @@ public sealed class TerminalView : ContentControl
                 var column = 0; DrawCell? cursor = null;
                 foreach (var cell in layout.Cells.OrderBy(cell => cell.Start))
                 { if (_snapshot.CursorColumn >= column && _snapshot.CursorColumn < column + cell.GridWidth / _cellWidth) { cursor = cell; break; } column += (int)Math.Round(cell.GridWidth / _cellWidth); }
-                var rect = new Rect(cursor?.X ?? _snapshot.CursorColumn * _cellWidth, y, 2.0, _lineHeight);
+                var cursorX = cursor?.X ?? _snapshot.CursorColumn * _cellWidth;
+                if (cursor is not null && cursor.Rtl) cursorX = cursor.X + cursor.Width - 2.0;
+                var rect = new Rect(cursorX, y, 2.0, _lineHeight);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(90, 230, 230, 230)), new Pen(Brushes.LightGray, 1), rect);
             }
         }

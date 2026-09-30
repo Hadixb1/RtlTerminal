@@ -50,6 +50,14 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        this.Activated += (_, _) =>
+        {
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+            {
+                TerminalTextBox.Focus();
+                System.Windows.Input.Keyboard.Focus(TerminalTextBox);
+            }));
+        };
         TerminalTextBox.LinkRequested += uri =>
         {
             try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
@@ -427,7 +435,35 @@ ApplySavedFontSettings();
         var button = GetMouseButtonCode(e.ChangedButton);
 
         if (button < 0 || !SendMouseEvent(e, button, released: false))
+        {
+            if (e.ChangedButton == MouseButton.Left && _lastRenderedSnapshot is { } snapshot && _session is not null && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                if (TryGetMouseCell(e, out var cx, out var cy))
+                {
+                    int cols = GetColumns();
+                    // cy is 1-based viewport-relative row, so cy - 1 is the 0-based viewport row.
+                    // snapshot.CursorRow is the absolute row (including scrollback).
+                    int absoluteClickRow = (cy - 1) + snapshot.ScrollbackCount;
+                    
+                    int clickIndex = absoluteClickRow * cols + (cx - 1);
+                    int cursorIndex = snapshot.CursorRow * cols + snapshot.CursorColumn;
+                    int diff = clickIndex - cursorIndex;
+                    
+                    if (Math.Abs(diff) < 2000)
+                    {
+                        var app = snapshot.Modes.ApplicationCursorKeys;
+                        var left = app ? "\x1bOD" : "\x1b[D";
+                        var right = app ? "\x1bOC" : "\x1b[C";
+                        
+                        if (diff < 0)
+                            for (int i = 0; i < -diff; i++) _session.Write(left);
+                        else if (diff > 0)
+                            for (int i = 0; i < diff; i++) _session.Write(right);
+                    }
+                }
+            }
             return;
+        }
 
         _lastReportedMouseCell = null;
         Mouse.Capture(TerminalTextBox);
@@ -923,22 +959,19 @@ ApplySavedFontSettings();
             _ => "Command Prompt"
         };
 
-    private static string GetProfileCommand(TerminalProfile profile) =>
-        (profile switch
+    private static string GetProfileCommand(TerminalProfile profile)
+    {
+        var esc = '\x1b';
+        return (profile switch
         {
             TerminalProfile.PowerShell =>
-                """
-                C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command "$lines=@('+--------------------------------------------------------+','| RtlTerminal v{APP_VERSION}                                     |','|                                                        |','| Author : Behnam Tajadini                               |','| Source : github.com/mirbehnam/RtlTerminal              |','| YouTube: @aka_techno                                   |','+--------------------------------------------------------+','','  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ',''); $lines | ForEach-Object { Write-Host $_ }"
-                """,
+                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                                     |','|                                                        |','| Author : Behnam Tajadini                               |','| Source : github.com/mirbehnam/RtlTerminal              |','| YouTube: @aka_techno                                   |','+--------------------------------------------------------+','','  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
             TerminalProfile.Wsl =>
-                """
-                C:\Windows\System32\wsl.exe --exec sh -lc "printf '%s\n' '+--------------------------------------------------------+' '| RtlTerminal v{APP_VERSION}                                     |' '|                                                        |' '| Author : Behnam Tajadini                               |' '| Source : github.com/mirbehnam/RtlTerminal              |' '| YouTube: @aka_techno                                   |' '+--------------------------------------------------------+' '' '  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ' ''; exec \"${SHELL:-/bin/bash}\" -l"
-                """,
+                $@"C:\Windows\System32\wsl.exe --exec sh -lc ""printf '%b\n' '\033[31m+--------------------------------------------------------+' '| RtlTerminal v{{APP_VERSION}}                                     |' '|                                                        |' '| Author : Behnam Tajadini                               |' '| Source : github.com/mirbehnam/RtlTerminal              |' '| YouTube: @aka_techno                                   |' '+--------------------------------------------------------+' '' '  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ' '\033[32m'; PS1='\[\033[31m\]\u@\h:\w$ \[\033[32m\]'; exec \""${{SHELL:-/bin/bash}}\"" -l""",
             _ =>
-                """
-                C:\Windows\System32\cmd.exe /D /Q /K "chcp 65001>nul & echo +--------------------------------------------------------+& echo ^| RtlTerminal v{APP_VERSION}                                     ^|& echo ^|                                                        ^|& echo ^| Author : Behnam Tajadini                               ^|& echo ^| Source : github.com/mirbehnam/RtlTerminal              ^|& echo ^| YouTube: @aka_techno                                   ^|& echo +--------------------------------------------------------+& echo.& echo   پشتیبانی کامل از زبان فارسی و راست‌به‌چپ& echo."
-                """
+                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^|                                                        ^|& echo ^| Author : Behnam Tajadini                               ^|& echo ^| Source : github.com/mirbehnam/RtlTerminal              ^|& echo ^| YouTube: @aka_techno                                   ^|& echo +--------------------------------------------------------+& echo.& echo   پشتیبانی کامل از زبان فارسی و راست‌به‌چپ& echo."""
         }).Replace("{APP_VERSION}", AppVersion.Display);
+    }
 
     private static bool IsWslAvailable()
     {
@@ -1244,8 +1277,25 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             return;
         }
 
+        if (!controlPressed &&
+            shiftPressed &&
+            GetEffectiveKey(e) == Key.OemQuestion &&
+            System.Windows.Input.InputLanguageManager.Current?.CurrentInputLanguage?.TwoLetterISOLanguageName == "fa")
+        {
+            _session.Write("\u061f");
+            e.Handled = true;
+            return;
+        }
 
         var key = GetEffectiveKey(e);
+        
+        // Swap Left/Right arrow keys if Persian language is active
+        if (System.Windows.Input.InputLanguageManager.Current?.CurrentInputLanguage?.TwoLetterISOLanguageName == "fa")
+        {
+            if (key == Key.Left) key = Key.Right;
+            else if (key == Key.Right) key = Key.Left;
+        }
+
         var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
         var sequence = GetTerminalKeySequence(
             key,
