@@ -445,6 +445,19 @@ ApplySavedFontSettings();
             e.Handled = true;
             return;
         }
+
+        // PuTTY style copy on select
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            Dispatcher.InvokeAsync(() => {
+                if (TerminalTextBox.HasSelection)
+                {
+                    try { TerminalTextBox.CopySelection(); } catch { }
+                    TerminalTextBox.SelectionLength = 0; // Clear selection after copy (PuTTY style)
+                }
+            }, System.Windows.Threading.DispatcherPriority.Input);
+        }
+
         var button = GetMouseButtonCode(e.ChangedButton);
 
         if (button < 0 || !SendMouseEvent(e, button, released: true))
@@ -1243,16 +1256,6 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             return;
         }
 
-        if (!controlPressed &&
-            shiftPressed &&
-            GetEffectiveKey(e) == Key.OemQuestion &&
-            InputLanguageManager.Current.CurrentInputLanguage
-                .TwoLetterISOLanguageName == "fa")
-        {
-            _session.Write("\u061f");
-            e.Handled = true;
-            return;
-        }
 
         var key = GetEffectiveKey(e);
         var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
