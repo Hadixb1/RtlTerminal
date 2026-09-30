@@ -58,8 +58,11 @@ Rtl Terminal uses the Windows ConPTY API and works with command-line environment
 - Render animated progress bars and in-place terminal line updates.
 - Keep long-running AI agent output responsive with incremental scrollback rendering.
 - Choose a 2,000, 5,000 or 10,000-line scrollback history limit in Font settings.
-- Detect `http://`, `https://` and `www.` links and open them with `Ctrl + Click`.
-- Copy selected text with `Ctrl+C` or `Ctrl+Shift+C`.
+- Detect `http://`, `https://` and `www.` links and open them with a single click.
+- Copy selected text automatically when dragging (PuTTY style) or with `Ctrl+C`.
+- Click anywhere in Persian/Arabic text to accurately position the insertion cursor.
+- Automatically swap Left and Right arrow keys when typing with a Persian keyboard layout.
+- Colorized header prompts (Red) to distinguish between prompt and user input (Green).
 - Paste text, copied file paths and clipboard images with `Ctrl+V`, `Ctrl+Shift+V` or right-click.
 - Clipboard paths retain their Windows form; convert paths manually when needed in WSL.
 - Send `Ctrl+C` as an interrupt when no text is selected.
@@ -301,8 +304,11 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 - پشتیبانی از progress bar و بازنویسی خروجی روی همان خط
 - رندر بهینه برای خروجی‌های طولانی agent‌های هوش مصنوعی
 - انتخاب ظرفیت سابقه از میان ۲۰۰۰، ۵۰۰۰ یا ۱۰۰۰۰ خط در تنظیمات فونت
-- تشخیص لینک و بازکردن آن با `Ctrl + Click`
-- کپی متن با `Ctrl+C` یا `Ctrl+Shift+C`
+- تشخیص لینک و بازکردن آن با یک کلیک ساده
+- کپی خودکار متن با انتخاب و درگ کردن (مشابه PuTTY)
+- تعیین دقیق موقعیت مکان‌نما با کلیک ماوس در هر کجای کلمات فارسی
+- جابه‌جایی خودکار عملکرد کلیدهای جهت‌نمای چپ و راست در زمان فعال‌بودن کیبورد فارسی
+- رنگ‌بندی مجزای خط فرمان (قرمز) و متن تایپ‌شده (سبز)
 - Paste متن، مسیر فایل‌های کپی‌شده و تصویر Clipboard با `Ctrl+V`، `Ctrl+Shift+V` یا راست‌کلیک
 - حفظ مسیرهای ویندوز هنگام Paste؛ در WSL تبدیل مسیر در صورت نیاز دستی است
 - ارسال Interrupt با `Ctrl+C` در صورتی که متنی انتخاب نشده باشد
