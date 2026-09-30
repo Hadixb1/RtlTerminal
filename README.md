@@ -19,11 +19,11 @@
 
   **Latest Windows 10/11 installer — no separate .NET installation required**
 
-  ### [⬇️ دریافت آخرین نسخهٔ منتشرشده](https://github.com/mirbehnam/RtlTerminal/releases/latest)
+  ### [⬇️ دریافت آخرین نسخهٔ منتشرشده](https://github.com/hadigorge/RtlTerminal/releases/latest)
 
-  ### [⬇️ Get the latest published release](https://github.com/mirbehnam/RtlTerminal/releases/latest)
+  ### [⬇️ Get the latest published release](https://github.com/hadigorge/RtlTerminal/releases/latest)
 
-  [وب‌سایت رسمی · Official website](https://mirbehnam.github.io/RtlTerminal/) · [مشاهده همه نسخه‌ها · View all releases](https://github.com/mirbehnam/RtlTerminal/releases)
+  [وب‌سایت رسمی · Official website](https://mirbehnam.github.io/RtlTerminal/) · [مشاهده همه نسخه‌ها · View all releases](https://github.com/hadigorge/RtlTerminal/releases)
 
   <br>
 
@@ -129,7 +129,7 @@ Requirements:
 Clone your published repository, then build it:
 
 ```powershell
-git clone https://github.com/mirbehnam/RtlTerminal.git
+git clone https://github.com/hadigorge/RtlTerminal.git
 cd RtlTerminal
 dotnet build RtlTerminal.csproj
 ```
@@ -344,7 +344,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 ابتدا .NET 8 SDK را نصب کنید، سپس:
 
 ```powershell
-git clone https://github.com/mirbehnam/RtlTerminal.git
+git clone https://github.com/hadigorge/RtlTerminal.git
 cd RtlTerminal
 dotnet build RtlTerminal.csproj
 ```
@@ -469,7 +469,7 @@ git push origin main
 ثبّت .NET 8 SDK ثم نفّذ:
 
 ```powershell
-git clone https://github.com/mirbehnam/RtlTerminal.git
+git clone https://github.com/hadigorge/RtlTerminal.git
 cd RtlTerminal
 dotnet build RtlTerminal.csproj
 ```
