@@ -446,18 +446,6 @@ ApplySavedFontSettings();
             return;
         }
 
-        // PuTTY style copy on select
-        if (e.ChangedButton == MouseButton.Left)
-        {
-            Dispatcher.InvokeAsync(() => {
-                if (TerminalTextBox.HasSelection)
-                {
-                    try { TerminalTextBox.CopySelection(); } catch { }
-                    TerminalTextBox.SelectionLength = 0; // Clear selection after copy (PuTTY style)
-                }
-            }, System.Windows.Threading.DispatcherPriority.Input);
-        }
-
         var button = GetMouseButtonCode(e.ChangedButton);
 
         if (button < 0 || !SendMouseEvent(e, button, released: true))
