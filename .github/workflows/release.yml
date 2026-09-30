@@ -44,6 +44,13 @@ jobs:
           -p:PublishTrimmed=false
           --output publish/win-x64
 
+
+      - name: Upload binaries as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RtlTerminal-Binaries
+          path: publish/win-x64/
+
       - name: Build installer
         shell: pwsh
         run: |
