@@ -1280,7 +1280,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         if (!controlPressed &&
             shiftPressed &&
             GetEffectiveKey(e) == Key.OemQuestion &&
-            System.Windows.Input.InputLanguageManager.Current?.CurrentInputLanguage?.TwoLetterISOLanguageName == "fa")
+            KeyboardHelper.IsPersianKeyboard())
         {
             _session.Write("\u061f");
             e.Handled = true;
@@ -1290,7 +1290,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         var key = GetEffectiveKey(e);
         
         // Swap Left/Right arrow keys if Persian language is active
-        if (System.Windows.Input.InputLanguageManager.Current?.CurrentInputLanguage?.TwoLetterISOLanguageName == "fa")
+        if (KeyboardHelper.IsPersianKeyboard())
         {
             if (key == Key.Left) key = Key.Right;
             else if (key == Key.Right) key = Key.Left;
