@@ -1181,11 +1181,12 @@ public sealed class TerminalBuffer
 
     private void ScrollDown(int count) => ScrollRegionDown(_scrollTop, _scrollBottom, count);
 
-    private void ScrollRegionUp(int top, int bottom, int count)
+    private void ScrollRegionUp(int top, int bottom, int count, bool addToScrollback = true)
     {
         count = Math.Clamp(count, 1, bottom - top + 1);
 
-        if (!_alternateScreenActive &&
+        if (addToScrollback &&
+            !_alternateScreenActive &&
             top == 0 &&
             bottom == _rows - 1)
         {
@@ -1232,7 +1233,7 @@ public sealed class TerminalBuffer
         if (_cursorRow < _scrollTop || _cursorRow > _scrollBottom)
             return;
 
-        ScrollRegionUp(_cursorRow, _scrollBottom, count);
+        ScrollRegionUp(_cursorRow, _scrollBottom, count, false);
     }
 
     private void EraseDisplay(int mode)
