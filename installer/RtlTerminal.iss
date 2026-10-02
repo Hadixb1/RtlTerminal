@@ -37,6 +37,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Files]
 Source: "{#PublishDirectory}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
+[InstallDelete]
+Type: files; Name: "{app}\RtlTerminal.dll"
+Type: files; Name: "{app}\RtlTerminal.runtimeconfig.json"
+Type: files; Name: "{app}\RtlTerminal.pdb"
+
 [Icons]
 Name: "{group}\Rtl Terminal"; Filename: "{app}\{#AppExeName}"
 Name: "{group}\Uninstall Rtl Terminal"; Filename: "{uninstallexe}"

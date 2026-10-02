@@ -1277,12 +1277,14 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             return;
         }
 
+        var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
+
         if (!controlPressed &&
+            !altPressed &&
             shiftPressed &&
-            GetEffectiveKey(e) == Key.OemQuestion &&
-            KeyboardHelper.IsPersianKeyboard())
+            GetEffectiveKey(e) == Key.OemQuestion)
         {
-            _session.Write("\u061f");
+            _session.Write(KeyboardHelper.IsPersianKeyboard() ? "\u061f" : "?");
             e.Handled = true;
             return;
         }
@@ -1296,7 +1298,6 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             else if (key == Key.Right) key = Key.Left;
         }
 
-        var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
         var sequence = GetTerminalKeySequence(
             key,
             shiftPressed,

@@ -5,7 +5,9 @@
 bin/
 obj/
 publish/
+publishwin-x64-2/
 release/
+release_notes.md
 binDebugnet8.0-windowsrtl-build/
 
 *.user
