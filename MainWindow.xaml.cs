@@ -377,7 +377,13 @@ ApplySavedFontSettings();
         if (_session is null || string.IsNullOrEmpty(e.Text))
             return;
 
-        _session.Write(e.Text);
+        var text = e.Text;
+        if (text == "?" && KeyboardHelper.IsPersianKeyboard())
+        {
+            text = "\u061f";
+        }
+
+        _session.Write(text);
         e.Handled = true;
     }
 
@@ -965,7 +971,7 @@ ApplySavedFontSettings();
         return (profile switch
         {
             TerminalProfile.PowerShell =>
-                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                                     |','|                                                        |','| Author : Behnam Tajadini                               |','| Source : github.com/mirbehnam/RtlTerminal              |','| YouTube: @aka_techno                                   |','+--------------------------------------------------------+','','  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
+                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                                     |','|                                                        |','| Author : Behnam Tajadini                               |','| Source : github.com/mirbehnam/RtlTerminal              |','| YouTube: @aka_techno                                   |','+--------------------------------------------------------+','','  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
             TerminalProfile.Wsl =>
                 $@"C:\Windows\System32\wsl.exe --exec sh -lc ""printf '%b\n' '\033[31m+--------------------------------------------------------+' '| RtlTerminal v{{APP_VERSION}}                                     |' '|                                                        |' '| Author : Behnam Tajadini                               |' '| Source : github.com/mirbehnam/RtlTerminal              |' '| YouTube: @aka_techno                                   |' '+--------------------------------------------------------+' '' '  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ' '\033[32m'; PS1='\[\033[31m\]\u@\h:\w$ \[\033[32m\]'; exec \""${{SHELL:-/bin/bash}}\"" -l""",
             _ =>
@@ -1278,16 +1284,6 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         }
 
         var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
-
-        if (!controlPressed &&
-            !altPressed &&
-            shiftPressed &&
-            GetEffectiveKey(e) == Key.OemQuestion)
-        {
-            _session.Write(KeyboardHelper.IsPersianKeyboard() ? "\u061f" : "?");
-            e.Handled = true;
-            return;
-        }
 
         var key = GetEffectiveKey(e);
         
