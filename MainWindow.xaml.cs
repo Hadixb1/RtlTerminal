@@ -374,10 +374,13 @@ ApplySavedFontSettings();
         object sender,
         TextCompositionEventArgs e)
     {
-        if (_session is null || string.IsNullOrEmpty(e.Text))
+        if (_session is null)
             return;
 
-        var text = e.Text;
+        var text = !string.IsNullOrEmpty(e.Text) ? e.Text : e.SystemText;
+        if (string.IsNullOrEmpty(text))
+            return;
+
         if (text == "?" && KeyboardHelper.IsPersianKeyboard())
         {
             text = "\u061f";
@@ -1284,6 +1287,16 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         }
 
         var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
+
+        if (!controlPressed &&
+            !altPressed &&
+            shiftPressed &&
+            GetEffectiveKey(e) == Key.OemQuestion)
+        {
+            _session.Write(KeyboardHelper.IsPersianKeyboard() ? "\u061f" : "?");
+            e.Handled = true;
+            return;
+        }
 
         var key = GetEffectiveKey(e);
         
