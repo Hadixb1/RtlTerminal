@@ -1,4 +1,4 @@
-$src = 'C:\Users\hadixb\RtlTerminal_repo\publish\win-x64-debug\RtlTerminal.exe'
+$src = 'C:\Users\hadixb\RtlTerminal_repo\publish\win-x64\RtlTerminal.exe'
 $dst = 'C:\Program Files\behnamapps\Rtl Terminal\RtlTerminal.exe'
 $marker = 'C:\Users\hadixb\RtlTerminal_repo\replace_done.txt'
 
