@@ -1328,8 +1328,17 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             GetEffectiveKey(e) == Key.OemQuestion)
         {
             var persianMark = KeyboardHelper.IsPersianKeyboard();
-            InputDebug.Log($"PATH-A write={(persianMark ? "U+061F" : "ASCII-?")}");
-            _session.Write(persianMark ? "\u061f" : "?");
+            // Authoritative: what THIS window's layout yields for Shift+OemQuestion.
+            // IsPersianKeyboard() consults the foreground window, which a transient
+            // popup can make look English while the user is typing Persian.
+            var markChar = KeyboardHelper.GetShiftedOemQuestion();
+            InputDebug.Log($"PATH-A write={(markChar == '\u061f' ? "U+061F" : "ASCII-?")} (fgPersian={persianMark})");
+            // Write the character as UTF-8 bytes on the ConPTY pipe.
+            // WriteConsoleInputW + AttachConsole writes to the console's input
+            // buffer which ConPTY does not always relay to the child, so the
+            // synthetic KEY_EVENT was silently lost. The UTF-8 byte path is the
+            // one conhost actually feeds to the reading application.
+            _session.Write(markChar.ToString());
             InputDebug.Log("PATH-A write returned");
             e.Handled = true;
             return;

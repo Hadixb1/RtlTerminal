@@ -46,6 +46,18 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
 
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleCP(uint wCodePageID);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleOutputCP(uint wCodePageID);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetConsoleCP();
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetConsoleOutputCP();
+
     public ConPtySession(short columns, short rows)
 
     {
@@ -148,6 +160,19 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
             throw new Win32Exception(Marshal.GetLastWin32Error());
 
+        // Force the pseudo console to UTF-8 (CP 65001).
+        // conhost decodes the ConPTY input pipe and converts KEY_EVENT -> bytes for
+        // ReadFile() using the console's INPUT code page. On an OEM page (437) the
+        // UTF-8 bytes of U+061F (؟) are not representable, so the child process
+        // received '?' instead. The code page lives on the pseudo console the child
+        // is attached to, so we attach to it briefly and set it there.
+        FreeConsole();
+        var attached = AttachConsole(_processInfo.dwProcessId);
+        var cpOk = attached && SetConsoleCP(65001) && SetConsoleOutputCP(65001);
+        InputDebug.Log($"CONPTY cp set attached={attached} ok={cpOk} gle={Marshal.GetLastWin32Error()} inCp={GetConsoleCP()} outCp={GetConsoleOutputCP()}");
+        if (attached)
+            FreeConsole();
+
     }
 
     public int Read(byte[] buffer)
@@ -208,6 +233,119 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     }
 
 
+
+
+    // ---- Synthetic key-event input (Shift+/ = U+061F) --------------------------------
+    // conhost turns raw UTF-8 bytes written to the ConPTY pipe into KEY_EVENT records.
+    // For characters that do not map onto the layout conhost uses (U+061F among them) it
+    // puts the character on the KEY-UP record, while clients that read only KEY-DOWN
+    // (prompt_toolkit -> Hermes / any Python TUI) silently drop it: typing "Shift+/"
+    // produced nothing. Writing the record ourselves guarantees KEY-DOWN carries it.
+    private const uint GENERIC_READ_WRITE = 0xC0000000;
+    private const uint FILE_SHARE_RW = 0x00000003;
+    private const uint OPEN_EXISTING_FILE = 3;
+    private const uint KEY_EVENT_TYPE = 1;
+    private const uint SHIFT_PRESSED = 0x0010;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEY_EVENT_RECORD_NATIVE
+    {
+        public int bKeyDown;
+        public ushort wRepeatCount;
+        public ushort wVirtualKeyCode;
+        public ushort wVirtualScanCode;
+        public char uChar;
+        public uint dwControlKeyState;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT_RECORD_NATIVE
+    {
+        public ushort EventType;
+        public KEY_EVENT_RECORD_NATIVE KeyEvent;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool AttachConsole(int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool FreeConsole();
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateFileW(string lpFileName, uint dwDesiredAccess, uint dwShareMode,
+        IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteConsoleInputW(IntPtr hConsoleInput, INPUT_RECORD_NATIVE[] lpBuffer,
+        uint nLength, out uint lpNumberOfEventsWritten);
+
+    [DllImport("user32.dll")]
+    private static extern short VkKeyScanExW(char ch, IntPtr hkl);
+
+    private const uint MAPVK_VK_TO_VSC = 0;
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKeyEx(uint uCode, uint uType, IntPtr dwhkl);
+
+    public bool WriteKeyChar(char character, bool shiftPressed)
+    {
+        if (_processInfo.dwProcessId == 0)
+            return false;
+
+        // AttachConsole is per-process: release any console we still hold so this write
+        // targets this session's child (Rtl Terminal itself is a GUI process).
+        FreeConsole();
+        if (!AttachConsole(_processInfo.dwProcessId))
+        {
+            InputDebug.Log($"WriteKeyChar AttachConsole failed gle={Marshal.GetLastWin32Error()}");
+            return false;
+        }
+
+        var handle = CreateFileW("CONIN$", GENERIC_READ_WRITE, FILE_SHARE_RW, IntPtr.Zero,
+            OPEN_EXISTING_FILE, 0, IntPtr.Zero);
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+        {
+            InputDebug.Log($"WriteKeyChar CONIN$ failed gle={Marshal.GetLastWin32Error()}");
+            FreeConsole();
+            return false;
+        }
+
+        var scan = VkKeyScanExW(character, IntPtr.Zero);
+        var vk = (byte)(scan & 0xFF);
+        var modifiers = (byte)((scan >> 8) & 0xFF);
+        if (scan == -1)
+        {
+            vk = 0;
+            modifiers = 0;
+        }
+
+        var state = 0u;
+        if ((modifiers & 0x10) != 0 || (shiftPressed && (modifiers & 0xFF) == 0))
+            state |= SHIFT_PRESSED;
+
+        var records = new INPUT_RECORD_NATIVE[2];
+        records[0] = new INPUT_RECORD_NATIVE
+        {
+            EventType = (ushort)KEY_EVENT_TYPE,
+            KeyEvent = new KEY_EVENT_RECORD_NATIVE
+            {
+                bKeyDown = 1, wRepeatCount = 1, wVirtualKeyCode = vk,
+                wVirtualScanCode = (ushort)MapVirtualKeyEx(vk, MAPVK_VK_TO_VSC, IntPtr.Zero),
+                uChar = character, dwControlKeyState = state,
+            },
+        };
+        records[1] = records[0];
+        records[1].KeyEvent.bKeyDown = 0;
+
+        var ok = WriteConsoleInputW(handle, records, (uint)records.Length, out var written);
+        InputDebug.Log(ok
+            ? $"KEYEV write ok events={written} char=U+{(int)character:X4}"
+            : $"KEYEV write failed gle={Marshal.GetLastWin32Error()}");
+
+        CloseHandle(handle);
+        FreeConsole();
+        return ok && written == records.Length;
+    }
 
     public void Resize(short columns, short rows)
 

@@ -35,10 +35,10 @@ public static class InputDebug
                         File.Move(path, rotated);
                     }
 
-                    _writer = new StreamWriter(path, append: true, Encoding.UTF8)
-                    {
-                        AutoFlush = true
-                    };
+                    // Several Rtl Terminal instances append to this file. Whoever opens it
+                    // first holds it with FileShare.Read, which rejects every other writer —
+                    // fall back to a per-process file instead of failing silently.
+                    _writer = OpenWriter(path);
                 }
 
                 _writer.WriteLine(
@@ -49,6 +49,26 @@ public static class InputDebug
         {
             // Diagnostics must never break typing.
         }
+    }
+
+    private static StreamWriter OpenWriter(string path)
+    {
+        var dir = Path.GetDirectoryName(path)!;
+        foreach (var candidate in new[] { path, Path.Combine(dir, $"input_debug.{Environment.ProcessId}.log") })
+        {
+            try
+            {
+                return new StreamWriter(
+                    new FileStream(candidate, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
+                    Encoding.UTF8) { AutoFlush = true };
+            }
+            catch (IOException)
+            {
+                // held by another instance — try the per-process file
+            }
+        }
+
+        return new StreamWriter(Stream.Null) { AutoFlush = true };
     }
 
     /// <summary>Human readable code points, e.g. "U+061F" or "U+0628,U+0631".</summary>
