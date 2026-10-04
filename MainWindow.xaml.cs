@@ -183,6 +183,14 @@ ApplySavedFontSettings();
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        var windowProbe = GetEffectiveKey(e);
+        if (windowProbe is Key.OemQuestion or Key.ImeProcessed or Key.DeadCharProcessed or Key.System)
+        {
+            InputDebug.Log(
+                $"WINDOW KEYDOWN key={windowProbe} mods={Keyboard.Modifiers} " +
+                $"focused={Keyboard.FocusedElement} inView={TerminalTextBox.IsKeyboardFocusWithin}");
+        }
+
         var controlPressed = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shiftPressed = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
@@ -375,17 +383,27 @@ ApplySavedFontSettings();
         TextCompositionEventArgs e)
     {
         if (_session is null)
+        {
+            InputDebug.Log("TEXTINPUT dropped: _session NULL");
             return;
+        }
 
         var text = !string.IsNullOrEmpty(e.Text) ? e.Text : e.SystemText;
         if (string.IsNullOrEmpty(text))
+        {
+            InputDebug.Log(
+                $"TEXTINPUT empty (Text={InputDebug.CodePoints(e.Text ?? string.Empty)} " +
+                $"SystemText={InputDebug.CodePoints(e.SystemText ?? string.Empty)})");
             return;
+        }
 
         if (text == "?" && KeyboardHelper.IsPersianKeyboard())
         {
+            InputDebug.Log("TEXTINPUT mapped ASCII ? -> U+061F");
             text = "\u061f";
         }
 
+        InputDebug.Log($"TEXTINPUT write {InputDebug.CodePoints(text)}");
         _session.Write(text);
         e.Handled = true;
     }
@@ -553,6 +571,7 @@ ApplySavedFontSettings();
         object sender,
         KeyboardFocusChangedEventArgs e)
     {
+        InputDebug.Log("FOCUS gained by terminal view");
         if (_lastRenderedSnapshot?.Modes.FocusReporting == true)
             _session?.Write("\x1b[I");
     }
@@ -561,6 +580,7 @@ ApplySavedFontSettings();
         object sender,
         KeyboardFocusChangedEventArgs e)
     {
+        InputDebug.Log($"FOCUS lost by terminal view (new focus: {Keyboard.FocusedElement})");
         _pendingContextMenuKey = null;
         if (_lastRenderedSnapshot?.Modes.FocusReporting == true)
             _session?.Write("\x1b[O");
@@ -1217,6 +1237,16 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
 
     private void TerminalTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        var probeKey = GetEffectiveKey(e);
+        if (Keyboard.Modifiers != ModifierKeys.None ||
+            probeKey is Key.OemQuestion or Key.ImeProcessed or Key.DeadCharProcessed or Key.System)
+        {
+            InputDebug.Log(
+                $"KEYDOWN key={probeKey} system={e.SystemKey} ime={e.ImeProcessedKey} " +
+                $"mods={Keyboard.Modifiers} session={(_session is null ? "NULL" : "ok")} " +
+                $"persian={KeyboardHelper.IsPersianKeyboard()} focus={TerminalTextBox.IsKeyboardFocusWithin}");
+        }
+
         if (GetEffectiveKey(e) == Key.Apps ||
             GetEffectiveKey(e) == Key.F10 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
         {
@@ -1226,8 +1256,12 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             e.Handled = true;
             return;
         }
+
         if (_session is null)
+        {
+            InputDebug.Log($"KEYDOWN {probeKey}: _session is NULL - input swallowed");
             return;
+        }
 
         var controlPressed = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shiftPressed = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
@@ -1293,9 +1327,17 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             shiftPressed &&
             GetEffectiveKey(e) == Key.OemQuestion)
         {
-            _session.Write(KeyboardHelper.IsPersianKeyboard() ? "\u061f" : "?");
+            var persianMark = KeyboardHelper.IsPersianKeyboard();
+            InputDebug.Log($"PATH-A write={(persianMark ? "U+061F" : "ASCII-?")}");
+            _session.Write(persianMark ? "\u061f" : "?");
+            InputDebug.Log("PATH-A write returned");
             e.Handled = true;
             return;
+        }
+
+        if (!controlPressed && !altPressed && probeKey == Key.OemQuestion)
+        {
+            InputDebug.Log($"PATH-A skipped (shiftPressed={shiftPressed}) -> falls through");
         }
 
         var key = GetEffectiveKey(e);
@@ -1315,7 +1357,11 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             _lastRenderedSnapshot?.Modes.ApplicationCursorKeys == true);
 
         if (sequence is null)
+        {
+            if (probeKey == Key.OemQuestion)
+                InputDebug.Log($"no terminal sequence for {probeKey} -> falls through to TextInput");
             return;
+        }
 
         _session.Write(sequence);
         e.Handled = true;
