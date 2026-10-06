@@ -160,18 +160,6 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
             throw new Win32Exception(Marshal.GetLastWin32Error());
 
-        // Force the pseudo console to UTF-8 (CP 65001).
-        // conhost decodes the ConPTY input pipe and converts KEY_EVENT -> bytes for
-        // ReadFile() using the console's INPUT code page. On an OEM page (437) the
-        // UTF-8 bytes of U+061F (؟) are not representable, so the child process
-        // received '?' instead. The code page lives on the pseudo console the child
-        // is attached to, so we attach to it briefly and set it there.
-        FreeConsole();
-        var attached = AttachConsole(_processInfo.dwProcessId);
-        var cpOk = attached && SetConsoleCP(65001) && SetConsoleOutputCP(65001);
-        InputDebug.Log($"CONPTY cp set attached={attached} ok={cpOk} gle={Marshal.GetLastWin32Error()} inCp={GetConsoleCP()} outCp={GetConsoleOutputCP()}");
-        if (attached)
-            FreeConsole();
 
     }
 
@@ -285,10 +273,22 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     [DllImport("user32.dll")]
     private static extern IntPtr GetKeyboardLayout(uint idThread);
 
-    private static IntPtr GetKeyboardLayoutCurrentThread()
+    /// <summary>
+    /// Attach this process to the child's console so WriteConsoleInputW targets it.
+    /// AttachConsole is per-process; Rtl Terminal is a GUI process whose statically
+    /// linked conhost never owns a console, so this succeeds on this path (measured).
+    /// Deliberately does NOT touch the console code page: the child runs with CP 437
+    /// and still receives injected KEY_EVENT records as UTF-16 (measured: a KEY-DOWN
+    /// carrying U+061F arrives at the child as U+061F under CP 437).
+    /// </summary>
+    private bool EnterChildConsole()
     {
-        try { return GetKeyboardLayout(0); }
-        catch { return IntPtr.Zero; }
+        FreeConsole();
+        if (AttachConsole(_processInfo.dwProcessId))
+            return true;
+
+        InputDebug.Log($"EnterChildConsole AttachConsole failed gle={Marshal.GetLastWin32Error()}");
+        return false;
     }
 
     private const uint MAPVK_VK_TO_VSC = 0;
@@ -314,14 +314,8 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         if (_processInfo.dwProcessId == 0)
             return false;
 
-        // AttachConsole is per-process: release any console we still hold so this write
-        // targets this session's child (Rtl Terminal itself is a GUI process).
-        FreeConsole();
-        if (!AttachConsole(_processInfo.dwProcessId))
-        {
-            InputDebug.Log($"WriteKeyChar AttachConsole failed gle={Marshal.GetLastWin32Error()}");
+        if (!EnterChildConsole())
             return false;
-        }
 
         var handle = CreateFileW("CONIN$", GENERIC_READ_WRITE, FILE_SHARE_RW, IntPtr.Zero,
             OPEN_EXISTING_FILE, 0, IntPtr.Zero);
@@ -332,38 +326,30 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             return false;
         }
 
-        // Resolve the virtual key through the layout that produced the character, not
-        // the thread's ambient layout: VkKeyScanExW('?', threadHkl) returns -1 when the
-        // process layout differs (e.g. English char while a popup's thread reports
-        // Persian), and -1 would synthesize vk=0 — a dead record conhost may not relay.
-        var hkl = layout != IntPtr.Zero ? layout : GetKeyboardLayoutCurrentThread();
+        // conhost validates an injected record's uChar against the CONSOLE's own
+        // keyboard layout and rewrites the character from wVirtualKeyCode whenever
+        // the two disagree (measured on a real pseudoconsole: a record carrying
+        // U+061F with vk=0xBF reached the child as U+003F, as did vk=0x00). So the
+        // record is only reliable for characters the console layout itself produces
+        // — '?' on a US console — and the vk must come from that same layout, which
+        // is what the caller passes in.
+        var hkl = layout != IntPtr.Zero ? layout : GetKeyboardLayout(0);
         var scan = VkKeyScanExW(character, hkl);
-        var vk = (byte)(scan & 0xFF);
-        var modifiers = (byte)((scan >> 8) & 0xFF);
         if (scan == -1)
         {
-            // Last resort: the physical key that produced this KeyDown (OEM '?/' key).
-            vk = 0xBF;
-            modifiers = 0;
+            InputDebug.Log($"WriteKeyChar VkKeyScanExW('{character}') unroutable on hkl=0x{hkl.ToInt64():X}");
+            CloseHandle(handle);
+            FreeConsole();
+            return false;
         }
 
-        // The pseudo console converts KEY_EVENT -> bytes for the child using the
-        // console INPUT code page. On an OEM page (437) U+061F is not
-        // representable, so the child received '?' even though the record
-        // carried U+061F (log: KEYEV write ok char=U+061F, screen shows ?).
-        // AttachConsole succeeds on this path, so set UTF-8 here; the
-        // conversion happens at child read time, i.e. after this call, so
-        // the very first press is already fixed.
-        var cpInOk = SetConsoleCP(65001);
-        var cpOutOk = SetConsoleOutputCP(65001);
-        if (!cpInOk || !cpOutOk)
-            InputDebug.Log($"WriteKeyChar codepage set in={cpInOk} out={cpOutOk} gle={Marshal.GetLastWin32Error()} inCp={GetConsoleCP()} outCp={GetConsoleOutputCP()}");
+        var vk = (byte)(scan & 0xFF);
+        var modifiers = (byte)((scan >> 8) & 0xFF);
 
         var state = 0u;
-        // VkKeyScanExW shift state lives in the LOW bits of the high byte
-        // (1=shift, 2=ctrl, 4=alt); the old 0x10 mask never matched, so a
-        // resolved Shift key never set SHIFT_PRESSED on the record. Honour
-        // the caller too: PATH-A always passes shiftPressed:true for Shift+/.
+        // VkKeyScanExW reports shift in the LOW bits of the high byte (1=shift,
+        // 2=ctrl, 4=alt); the old 0x10 mask never matched. Honour the caller too:
+        // PATH-A always passes shiftPressed:true for Shift+/.
         if (shiftPressed || (modifiers & 0x01) != 0)
             state |= SHIFT_PRESSED;
 
@@ -383,7 +369,7 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
         var ok = WriteConsoleInputW(handle, records, (uint)records.Length, out var written);
         InputDebug.Log(ok
-            ? $"KEYEV write ok events={written} char=U+{(int)character:X4}"
+            ? $"KEYEV write ok events={written} char=U+{(int)character:X4} vk=0x{vk:X2}"
             : $"KEYEV write failed gle={Marshal.GetLastWin32Error()}");
 
         CloseHandle(handle);

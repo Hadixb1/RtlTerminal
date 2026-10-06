@@ -1334,16 +1334,32 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             var markChar = KeyboardHelper.GetShiftedOemQuestion();
             var layout = KeyboardHelper.GetCurrentThreadLayout();
             InputDebug.Log($"PATH-A write={(markChar == '\u061f' ? "U+061F" : "ASCII-?")} (fgPersian={persianMark}) layout=0x{layout.ToInt64():X}");
-            // Synthetic KEY-DOWN/KEY-UP pair: conhost delivers pipe-written bytes for
-            // these marks on KEY-UP only (q3.log: EN '?' arrived as down=0), which
-            // prompt_toolkit (KEY-DOWN reader) silently drops. WriteKeyChar puts the
-            // character on KEY-DOWN itself. Falls back to the byte path when the
-            // console cannot be attached (same behaviour as before).
-            if (!_session.WriteKeyChar(markChar, shiftPressed: true, layout))
+
+            if (markChar == '\u061f')
             {
-                InputDebug.Log("PATH-A WriteKeyChar failed -> byte fallback");
-                _session.Write(markChar.ToString());
+                // U+061F cannot travel as a synthetic KEY_EVENT: conhost validates the
+                // record's uChar against the console's own (US) layout and rewrites it
+                // from wVirtualKeyCode, so the child received '?' for every vk/scan
+                // combination tried against a real pseudoconsole. Writing the UTF-8
+                // bytes instead lets conhost synthesise the record itself, and that
+                // KEY-DOWN really carries U+061F for prompt_toolkit to read
+                // (measured: KEYDOWN uChar=U+061F shift=0x10).
+                _session.Write("\u061f");
             }
+            else
+            {
+                // ASCII '?' must go through the synthetic record: a lone 0x3F byte came
+                // back as ALT-modified records with '?' only on the ALT KEY-UP, which
+                // prompt_toolkit (KEY-DOWN reader) silently drops. On the console's US
+                // layout vk=0xBF genuinely produces '?', so conhost relays it untouched
+                // (measured: KEYDOWN vk=0xBF uChar=U+003F).
+                if (!_session.WriteKeyChar('?', true, layout))
+                {
+                    InputDebug.Log("PATH-A WriteKeyChar refused ASCII ? -> raw byte path (unverified)");
+                    _session.Write(markChar.ToString());
+                }
+            }
+
             InputDebug.Log("PATH-A write returned");
             e.Handled = true;
             return;
