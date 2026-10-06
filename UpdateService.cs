@@ -17,7 +17,7 @@ public sealed record UpdateCheckResult(
 public static class UpdateService
 {
     private const string LatestReleaseApi =
-        "https://api.github.com/repos/mirbehnam/RtlTerminal/releases/latest";
+        "https://api.github.com/repos/hadigorge/RtlTerminal/releases/latest";
     private static readonly HttpClient Client = CreateClient();
 
     public static async Task<UpdateCheckResult> CheckAsync(
