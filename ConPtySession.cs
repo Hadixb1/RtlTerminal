@@ -347,8 +347,24 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             modifiers = 0;
         }
 
+        // The pseudo console converts KEY_EVENT -> bytes for the child using the
+        // console INPUT code page. On an OEM page (437) U+061F is not
+        // representable, so the child received '?' even though the record
+        // carried U+061F (log: KEYEV write ok char=U+061F, screen shows ?).
+        // AttachConsole succeeds on this path, so set UTF-8 here; the
+        // conversion happens at child read time, i.e. after this call, so
+        // the very first press is already fixed.
+        var cpInOk = SetConsoleCP(65001);
+        var cpOutOk = SetConsoleOutputCP(65001);
+        if (!cpInOk || !cpOutOk)
+            InputDebug.Log($"WriteKeyChar codepage set in={cpInOk} out={cpOutOk} gle={Marshal.GetLastWin32Error()} inCp={GetConsoleCP()} outCp={GetConsoleOutputCP()}");
+
         var state = 0u;
-        if ((modifiers & 0x10) != 0 || (shiftPressed && (modifiers & 0xFF) == 0))
+        // VkKeyScanExW shift state lives in the LOW bits of the high byte
+        // (1=shift, 2=ctrl, 4=alt); the old 0x10 mask never matched, so a
+        // resolved Shift key never set SHIFT_PRESSED on the record. Honour
+        // the caller too: PATH-A always passes shiftPressed:true for Shift+/.
+        if (shiftPressed || (modifiers & 0x01) != 0)
             state |= SHIFT_PRESSED;
 
         var records = new INPUT_RECORD_NATIVE[2];
