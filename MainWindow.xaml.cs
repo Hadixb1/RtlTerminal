@@ -1332,13 +1332,18 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             // IsPersianKeyboard() consults the foreground window, which a transient
             // popup can make look English while the user is typing Persian.
             var markChar = KeyboardHelper.GetShiftedOemQuestion();
-            InputDebug.Log($"PATH-A write={(markChar == '\u061f' ? "U+061F" : "ASCII-?")} (fgPersian={persianMark})");
-            // Write the character as UTF-8 bytes on the ConPTY pipe.
-            // WriteConsoleInputW + AttachConsole writes to the console's input
-            // buffer which ConPTY does not always relay to the child, so the
-            // synthetic KEY_EVENT was silently lost. The UTF-8 byte path is the
-            // one conhost actually feeds to the reading application.
-            _session.Write(markChar.ToString());
+            var layout = KeyboardHelper.GetCurrentThreadLayout();
+            InputDebug.Log($"PATH-A write={(markChar == '\u061f' ? "U+061F" : "ASCII-?")} (fgPersian={persianMark}) layout=0x{layout.ToInt64():X}");
+            // Synthetic KEY-DOWN/KEY-UP pair: conhost delivers pipe-written bytes for
+            // these marks on KEY-UP only (q3.log: EN '?' arrived as down=0), which
+            // prompt_toolkit (KEY-DOWN reader) silently drops. WriteKeyChar puts the
+            // character on KEY-DOWN itself. Falls back to the byte path when the
+            // console cannot be attached (same behaviour as before).
+            if (!_session.WriteKeyChar(markChar, shiftPressed: true, layout))
+            {
+                InputDebug.Log("PATH-A WriteKeyChar failed -> byte fallback");
+                _session.Write(markChar.ToString());
+            }
             InputDebug.Log("PATH-A write returned");
             e.Handled = true;
             return;

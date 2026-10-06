@@ -58,6 +58,17 @@ public static class KeyboardHelper
         return '?';
     }
 
+    /// <summary>
+    /// The HKL of the CURRENT thread (the thread that received the KeyDown).
+    /// Pass to ConPtySession.WriteKeyChar so VkKeyScanExW resolves through the layout
+    /// that produced the character.
+    /// </summary>
+    public static IntPtr GetCurrentThreadLayout()
+    {
+        try { return GetKeyboardLayout(0); }
+        catch { return IntPtr.Zero; }
+    }
+
     public static bool IsPersianKeyboard()
     {
         try

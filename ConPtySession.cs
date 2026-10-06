@@ -282,12 +282,34 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     [DllImport("user32.dll")]
     private static extern short VkKeyScanExW(char ch, IntPtr hkl);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetKeyboardLayout(uint idThread);
+
+    private static IntPtr GetKeyboardLayoutCurrentThread()
+    {
+        try { return GetKeyboardLayout(0); }
+        catch { return IntPtr.Zero; }
+    }
+
     private const uint MAPVK_VK_TO_VSC = 0;
 
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKeyEx(uint uCode, uint uType, IntPtr dwhkl);
 
     public bool WriteKeyChar(char character, bool shiftPressed)
+    {
+        return WriteKeyChar(character, shiftPressed, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Synthetic KEY-DOWN/KEY-UP pair carrying <paramref name="character"/> on both
+    /// records, for characters conhost otherwise delivers on KEY-UP only (U+061F among
+    /// them — prompt_toolkit reads KEY-DOWN only and silently drops the keystroke).
+    /// <paramref name="layout"/> is the HKL that produced the keystroke (the layout of
+    /// the thread that received the KeyDown); IntPtr.Zero falls back to the caller's
+    /// own layout.
+    /// </summary>
+    public bool WriteKeyChar(char character, bool shiftPressed, IntPtr layout)
     {
         if (_processInfo.dwProcessId == 0)
             return false;
@@ -310,12 +332,18 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             return false;
         }
 
-        var scan = VkKeyScanExW(character, IntPtr.Zero);
+        // Resolve the virtual key through the layout that produced the character, not
+        // the thread's ambient layout: VkKeyScanExW('?', threadHkl) returns -1 when the
+        // process layout differs (e.g. English char while a popup's thread reports
+        // Persian), and -1 would synthesize vk=0 — a dead record conhost may not relay.
+        var hkl = layout != IntPtr.Zero ? layout : GetKeyboardLayoutCurrentThread();
+        var scan = VkKeyScanExW(character, hkl);
         var vk = (byte)(scan & 0xFF);
         var modifiers = (byte)((scan >> 8) & 0xFF);
         if (scan == -1)
         {
-            vk = 0;
+            // Last resort: the physical key that produced this KeyDown (OEM '?/' key).
+            vk = 0xBF;
             modifiers = 0;
         }
 
