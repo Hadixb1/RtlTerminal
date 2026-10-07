@@ -146,7 +146,20 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
         startupInfo.lpAttributeList = _attributeList;
 
-
+        // Per Microsoft's ConPTY guidance: when spawning a child under a pseudoconsole,
+        // set STARTF_USESTDHANDLES with INVALID_HANDLE_VALUE so the child does NOT inherit
+        // the parent's (inherited, wrong) std handles. The console subsystem then gives the
+        // child proper console std handles (CONIN$/CONOUT$), which is what console apps
+        // (cmd, prompt_toolkit via GetStdHandle) expect. Without this, the child's
+        // GetStdHandle returns the parent's pipe handles -> ReadConsoleInputW fails with
+        // ERROR_INVALID_HANDLE (gle=6, "The handle is invalid") and typed input never reaches
+        // the child (Hermes bug: Persian ? and every keystroke dead; new tab shows
+        // "The handle is invalid.").
+        startupInfo.StartupInfo.dwFlags = 0x00000100; // STARTF_USESTDHANDLES
+        var invalid = new IntPtr(-1);                  // INVALID_HANDLE_VALUE
+        startupInfo.StartupInfo.hStdInput = invalid;
+        startupInfo.StartupInfo.hStdOutput = invalid;
+        startupInfo.StartupInfo.hStdError = invalid;
 
         var command = new StringBuilder(commandLine);
 
