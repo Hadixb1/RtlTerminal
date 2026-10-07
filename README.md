@@ -23,7 +23,7 @@
 
   ### [⬇️ Get the latest published release](https://github.com/hadigorge/RtlTerminal/releases/latest)
 
-  [وب‌سایت رسمی · Official website](https://mirbehnam.github.io/RtlTerminal/) · [مشاهده همه نسخه‌ها · View all releases](https://github.com/hadigorge/RtlTerminal/releases)
+  [مشاهده همه نسخه‌ها · View all releases](https://github.com/hadigorge/RtlTerminal/releases)
 
   <br>
 
@@ -40,7 +40,7 @@
 
 ### Rtl Terminal for Windows
 
-**Rtl Terminal** is an open-source Windows terminal emulator created by **behnamapps** for Persian, Arabic and other right-to-left language users. It provides a switchable RTL terminal view while preserving ANSI colors, interactive command-line applications, progress bars, links, Unicode text and standard terminal keyboard input.
+**Rtl Terminal** is an open-source Windows terminal emulator maintained by **Hadi** for Persian, Arabic and other right-to-left language users. It provides a switchable RTL terminal view while preserving ANSI colors, interactive command-line applications, progress bars, links, Unicode text and standard terminal keyboard input.
 
 Rtl Terminal uses the Windows ConPTY API and works with command-line environments such as Command Prompt, PowerShell, WSL, Bash, developer tools, package managers and interactive terminal applications.
 
@@ -263,9 +263,7 @@ See [renderer architecture and verification notes](docs/renderer.md).
 ### Project Information
 
 - Product: **Rtl Terminal**
-- Brand: **behnamapps**
-- Developer: **behnam tajadini**
-- YouTube: **aka_techno**
+- Maintainer: **Hadi**
 - Technology: **C# · .NET 8 · WPF · Windows ConPTY**
 
 ### Contributing
@@ -289,7 +287,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 
 ### ترمینال راست‌به‌چپ برای ویندوز
 
-**Rtl Terminal** یک شبیه‌ساز ترمینال متن‌باز برای ویندوز است که توسط برند **behnamapps** برای کاربران فارسی‌زبان، عربی‌زبان و زبان‌های راست‌به‌چپ ساخته شده است. این برنامه با Smart RTL جهت متن فارسی و ترکیبی را خودکار مدیریت می‌کند و شبکهٔ برنامه‌های تمام‌صفحه را حفظ می‌کند و در کنار آن از رنگ‌های ANSI، برنامه‌های تعاملی خط فرمان، نوارهای پیشرفت، لینک‌ها و متن Unicode پشتیبانی می‌کند.
+**Rtl Terminal** یک شبیه‌ساز ترمینال متن‌باز برای ویندوز است که توسط **Hadi** برای کاربران فارسی‌زبان، عربی‌زبان و زبان‌های راست‌به‌چپ ساخته شده است. این برنامه با Smart RTL جهت متن فارسی و ترکیبی را خودکار مدیریت می‌کند و شبکهٔ برنامه‌های تمام‌صفحه را حفظ می‌کند و در کنار آن از رنگ‌های ANSI، برنامه‌های تعاملی خط فرمان، نوارهای پیشرفت، لینک‌ها و متن Unicode پشتیبانی می‌کند.
 
 این برنامه با استفاده از Windows ConPTY می‌تواند محیط‌هایی مانند Command Prompt، PowerShell، WSL، Bash، ابزارهای توسعه، package managerها و برنامه‌های تعاملی ترمینال را اجرا کند.
 
@@ -417,7 +415,7 @@ git push origin main
 
 ### طرفية تدعم العربية واتجاه RTL لنظام Windows
 
-**Rtl Terminal** هو محاكي طرفية مفتوح المصدر لنظام Windows، طوّرته علامة **behnamapps** لمستخدمي اللغة العربية والفارسية واللغات التي تُكتب من اليمين إلى اليسار. يدير البرنامج اتجاه النص العربي والفارسي والمختلط باستخدام Smart RTL مع الحفاظ على شبكة التطبيقات بملء الشاشة مع دعم ألوان ANSI والنصوص Unicode والروابط وأشرطة التقدم وتطبيقات سطر الأوامر التفاعلية.
+**Rtl Terminal** هو محاكي طرفية مفتوح المصدر لنظام Windows، طوّره **Hadi** لمستخدمي اللغة العربية والفارسية واللغات التي تُكتب من اليمين إلى اليسار. يدير البرنامج اتجاه النص العربي والفارسي والمختلط باستخدام Smart RTL مع الحفاظ على شبكة التطبيقات بملء الشاشة مع دعم ألوان ANSI والنصوص Unicode والروابط وأشرطة التقدم وتطبيقات سطر الأوامر التفاعلية.
 
 يعتمد البرنامج على Windows ConPTY، ويمكنه تشغيل Command Prompt وPowerShell وWSL وBash وأدوات المطورين ومديري الحزم وتطبيقات CLI وTUI.
 

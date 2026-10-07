@@ -328,3 +328,15 @@ h3 {
     padding-block: 70px;
   }
 }
+
+.hadi-giant {
+  margin: 0 0 4px;
+  font-size: clamp(4.5rem, 13vw, 10rem);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  background: linear-gradient(92deg, #43d5ce 10%, #8f62ff 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

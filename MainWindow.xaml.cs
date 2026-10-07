@@ -844,10 +844,7 @@ ApplySavedFontSettings();
             this,
             """
             Rtl Terminal
-            by behnamapps
-
-            Developer: behnam tajadini
-            YouTube: aka_techno
+            by Hadi
 
             تقدیم به همه فارسی زبانان
             """,
@@ -994,11 +991,11 @@ ApplySavedFontSettings();
         return (profile switch
         {
             TerminalProfile.PowerShell =>
-                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                                     |','|                                                        |','| Author : Behnam Tajadini                               |','| Source : github.com/mirbehnam/RtlTerminal              |','| YouTube: @aka_techno                                   |','+--------------------------------------------------------+','','  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
+                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                                     |','| by Hadi                                                |','+--------------------------------------------------------+',',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
             TerminalProfile.Wsl =>
-                $@"C:\Windows\System32\wsl.exe --exec sh -lc ""printf '%b\n' '\033[31m+--------------------------------------------------------+' '| RtlTerminal v{{APP_VERSION}}                                     |' '|                                                        |' '| Author : Behnam Tajadini                               |' '| Source : github.com/mirbehnam/RtlTerminal              |' '| YouTube: @aka_techno                                   |' '+--------------------------------------------------------+' '' '  پشتیبانی کامل از زبان فارسی و راست‌به‌چپ' '\033[32m'; PS1='\[\033[31m\]\u@\h:\w$ \[\033[32m\]'; exec \""${{SHELL:-/bin/bash}}\"" -l""",
+                $@"C:\Windows\System32\wsl.exe --exec sh -lc ""printf '%b\n' '\033[31m+--------------------------------------------------------+' '| RtlTerminal v{{APP_VERSION}}                                     |' '| by Hadi                                                |' '+--------------------------------------------------------+' '\033[32m'; PS1='\[\033[31m\]\u@\h:\w$ \[\033[32m\]'; exec \""${{SHELL:-/bin/bash}}\"" -l""",
             _ =>
-                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^|                                                        ^|& echo ^| Author : Behnam Tajadini                               ^|& echo ^| Source : github.com/mirbehnam/RtlTerminal              ^|& echo ^| YouTube: @aka_techno                                   ^|& echo +--------------------------------------------------------+& echo.& echo   پشتیبانی کامل از زبان فارسی و راست‌به‌چپ& echo."""
+                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""
         }).Replace("{APP_VERSION}", AppVersion.Display);
     }
 

@@ -14,15 +14,15 @@
 
     <ApplicationIcon>RtlTerminal.ico</ApplicationIcon>
 
-    <Company>behnamapps</Company>
+    <Company>Hadi</Company>
 
-    <Authors>behnam tajadini</Authors>
+    <Authors>Hadi</Authors>
 
     <Product>Rtl Terminal</Product>
 
     <Description>RTL-enabled terminal for Persian language users.</Description>
 
-    <Version>1.0.19</Version>
+    <Version>1.0.20</Version>
 
     <Nullable>enable</Nullable>
 

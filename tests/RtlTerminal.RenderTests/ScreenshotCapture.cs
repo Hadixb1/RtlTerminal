@@ -45,7 +45,7 @@ internal static class ScreenshotCapture
                 "  \x1b[32m✓\x1b[0m  ANSI colors and cell-based graphics\r\n" +
                 "  \x1b[32m✓\x1b[0m  Logical Unicode selection and copying\r\n\r\n" +
                 "  \x1b[31m████\x1b[33m████\x1b[32m████\x1b[36m████\x1b[34m████\x1b[35m████\x1b[0m\r\n\r\n" +
-                "  https://github.com/mirbehnam/RtlTerminal\r\n" +
+                "  https://github.com/hadigorge/RtlTerminal\r\n" +
                 "  Ctrl + Left Click to open link\r\n\r\n" +
                 "  Demo output · Font: Consolas 14 · Smart RTL: on");
             Capture("rtl-terminal-persian-rtl-cli.png",
@@ -62,7 +62,7 @@ internal static class ScreenshotCapture
                 "  │  Paste              Right-click (no selection)│\r\n" +
                 "  │  Context menu       Apps key / Shift+F10     │\r\n" +
                 "  └──────────────────────────────────────────────┘\r\n\r\n" +
-                "  Demo output · https://github.com/mirbehnam/RtlTerminal");
+                "  Demo output · https://github.com/hadigorge/RtlTerminal");
 
             void Capture(string name, string output)
             {

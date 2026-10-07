@@ -2,7 +2,7 @@
 #ifndef AppVersion
   #error AppVersion must be supplied by build-release.ps1 or the release workflow
 #endif
-#define AppPublisher "behnamapps"
+#define AppPublisher "Hadi"
 #define AppExeName "RtlTerminal.exe"
 #define PublishDirectory "..\publish\win-x64"
 
@@ -11,7 +11,7 @@ AppId={{A5BC0F01-F4CD-49C4-B85F-8B88ACDC4416}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\behnamapps\Rtl Terminal
+DefaultDirName={autopf}\Hadi\Rtl Terminal
 DefaultGroupName=Rtl Terminal
 UninstallDisplayName=Rtl Terminal
 UninstallDisplayIcon={app}\{#AppExeName}

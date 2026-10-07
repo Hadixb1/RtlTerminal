@@ -115,7 +115,7 @@
             <TextBlock x:Name="PreviewTextBlock"
                        Foreground="#e6e6e6"
                        TextWrapping="Wrap"
-                       Text="Rtl Terminal  |  ترمینال فارسی  |  1234567890&#x0a;https://behnamapps.example" />
+                       Text="Rtl Terminal  |  ترمینال فارسی  |  1234567890&#x0a;https://example.com" />
         </Border>
 
         <StackPanel Grid.Row="3"
