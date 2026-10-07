@@ -102,6 +102,19 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
     {
 
+        // Force UTF-8 (CP 65001) as the console input code page for every child
+        // session. prompt_toolkit-based programs (Hermes) read raw VT bytes when
+        // ENABLE_VIRTUAL_TERMINAL_INPUT is on, and the conhost encodes those bytes
+        // with the console's INPUT code page. At the default CP 437 the Persian
+        // question mark U+061F has no mapping and arrives as '?' (0x3F) — or is
+        // dropped entirely. Measured on a real ConPTY: bytes D8 9F -> 3F under
+        // CP 437, intact under CP 65001. The old in-app fix (AttachConsole +
+        // SetConsoleCP from the GUI process) never ran: AttachConsole to a
+        // ConPTY-owned console fails with ERROR_GEN_FAILURE (gle=31). Setting the
+        // code page from INSIDE the child chain works: wrap the shell command in
+        // cmd.exe /d /c "chcp 65001>nul & <original>".
+        commandLine = $"cmd.exe /d /c \"chcp 65001>nul & {commandLine}\"";
+
         var startupInfo = new STARTUPINFOEX();
 
         startupInfo.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEX>();
