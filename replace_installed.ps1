@@ -1,6 +1,6 @@
-$src = 'C:\Users\hadixb\RtlTerminal_repo\publish\win-x64\RtlTerminal.exe'
-$dst = 'C:\Program Files\Hadi\Rtl Terminal\RtlTerminal.exe'
-$marker = 'C:\Users\hadixb\RtlTerminal_repo\replace_done.txt'
+$src = 'C:\Users\hadixb\RtlTerminal-work\publish\win-x64\RtlTerminal.exe'
+$dst = 'C:\Program Files\behnamapps\Rtl Terminal\RtlTerminal.exe'
+$marker = 'C:\Users\hadixb\RtlTerminal-work\replace_done.txt'
 
 function Note([string]$m) {
     Add-Content -Path $marker -Value ("$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  " + $m)
