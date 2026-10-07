@@ -173,6 +173,34 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
             throw new Win32Exception(Marshal.GetLastWin32Error());
 
+        // Force this pseudoconsole's conhost to UTF-8 (input AND output).
+        // The ConPTY conhost starts at CP 437; MSYS/bash translates console input
+        // to bytes using that code page, so anything non-ASCII (Persian ? U+061F
+        // and all Persian letters) arrived at programs under bash as '?' (measured:
+        // U+061F -> 0x3F under CP 437, intact D8 9F under CP 65001). Setting it here,
+        // once per session right after the child exists, fixes the whole chain
+        // (typing AND paste of Persian text in Hermes/bash) at the source.
+        // Best-effort: a failure here must never break the session.
+        try
+        {
+            if (EnterChildConsole())
+            {
+                var cpBefore = GetConsoleCP();
+                var outBefore = GetConsoleOutputCP();
+                var cpOk = SetConsoleCP(65001);
+                var outOk = SetConsoleOutputCP(65001);
+                InputDebug.Log($"CONPTY-CP in={cpBefore}->65001({cpOk}) out={outBefore}->65001({outOk})");
+                FreeConsole();
+            }
+            else
+            {
+                InputDebug.Log("CONPTY-CP skipped: AttachConsole failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            InputDebug.Log($"CONPTY-CP exception: {ex.Message}");
+        }
 
     }
 
