@@ -113,7 +113,17 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         // ConPTY-owned console fails with ERROR_GEN_FAILURE (gle=31). Setting the
         // code page from INSIDE the child chain works: wrap the shell command in
         // cmd.exe /d /c "chcp 65001>nul & <original>".
-        commandLine = $"cmd.exe /d /c \"chcp 65001>nul & {commandLine}\"";
+        // EXCEPTION — the PowerShell profile: its command string is itself full of
+        // double quotes (-Command "...", Write-Host "PS ...>") and cmd.exe cannot
+        // nest quotes. After cmd strips the outer quotes, > and | inside the PS
+        // string become cmd redirections -> "The system cannot find the path
+        // specified." and the shell never opens. The PS command already sets
+        // [Console]::Input/OutputEncoding=UTF8 (which is SetConsoleCP from inside
+        // the child) so the wrapper is redundant there.
+        if (!commandLine.Contains("powershell.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            commandLine = $"cmd.exe /d /c \"chcp 65001>nul & {commandLine}\"";
+        }
 
         var startupInfo = new STARTUPINFOEX();
 
