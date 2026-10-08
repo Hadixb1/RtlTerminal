@@ -229,6 +229,7 @@ public partial class MainWindow : Window
 
         AddProfileMenuItem(menu, "Command Prompt", TerminalProfile.CommandPrompt);
         AddProfileMenuItem(menu, "PowerShell", TerminalProfile.PowerShell);
+        AddProfileMenuItem(menu, "PowerShell (No VT)", TerminalProfile.PowerShellNoVT);
 
         if (IsWslAvailable())
             AddProfileMenuItem(menu, "WSL", TerminalProfile.Wsl);
@@ -984,18 +985,20 @@ public partial class MainWindow : Window
         };
 
     private static string GetProfileCommand(TerminalProfile profile)
-    {
-        var esc = '\x1b';
-        return (profile switch
         {
-            TerminalProfile.PowerShell =>
-                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
-            TerminalProfile.Wsl =>
-                $@"C:\Windows\System32\wsl.exe --exec sh -lc ""printf '%b\n' '\033[31m+--------------------------------------------------------+' '| RtlTerminal v{{APP_VERSION}}                                     |' '| by Hadi                                                |' '+--------------------------------------------------------+' '\033[32m'; PS1='\[\033[31m\]\u@\h:\w$ \[\033[32m\]'; exec \""${{SHELL:-/bin/bash}}\"" -l""",
-            _ =>
-                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""
-        }).Replace("{APP_VERSION}", AppVersion.Display);
-    }
+            var esc = '\x1b';
+            return (profile switch
+            {
+                TerminalProfile.PowerShell =>
+                    $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
+                TerminalProfile.PowerShellNoVT =>
+                    $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""$env:PT_DISABLE_VT='1'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
+                TerminalProfile.Wsl =>
+                    "C:\\Windows\\System32\\wsl.exe --exec sh -lc \"printf '%b\\n' '\\033[31m+--------------------------------------------------------+' '| RtlTerminal v" + AppVersion.Display + "                                     |' '| by Hadi                                                |' '+--------------------------------------------------------+' '\\033[32m'; PS1='\\[\\033[31m\\]\\u@\\h:\\w$ \\[\\033[32m\\]'; exec \"${SHELL:-/bin/bash}\" -l",
+                _ =>
+                    $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""""
+            }).Replace("{APP_VERSION}", AppVersion.Display);
+        }
 
     private static bool IsWslAvailable()
     {
@@ -1866,6 +1869,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
     {
         CommandPrompt,
         PowerShell,
+        PowerShellNoVT,
         Wsl
     }
 
