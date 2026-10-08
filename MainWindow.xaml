@@ -404,8 +404,16 @@
         </Border.Style>
     <DockPanel Background="#0c0c0c">
         <Grid DockPanel.Dock="Top"
-              Height="46"
-              Background="#202124">
+              Height="46">
+            <Grid.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#2A2D33" Offset="0" />
+                    <GradientStop Color="#202124" Offset="1" />
+                </LinearGradientBrush>
+            </Grid.Background>
+            <Grid.Effect>
+                <DropShadowEffect Color="#000000" Opacity="0.5" ShadowDepth="2" BlurRadius="8" Direction="270" />
+            </Grid.Effect>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="138" />
@@ -560,7 +568,11 @@
                      PreviewMouseRightButtonDown="TerminalTextBox_PreviewMouseRightButtonDown"
                      GotKeyboardFocus="TerminalTextBox_GotKeyboardFocus"
                      LostKeyboardFocus="TerminalTextBox_LostKeyboardFocus"
-                     PreviewTextInput="TerminalTextBox_PreviewTextInput" />
+                     PreviewTextInput="TerminalTextBox_PreviewTextInput">
+            <local:TerminalView.Effect>
+                <DropShadowEffect Color="#72D6C5" Opacity="0.04" ShadowDepth="0" BlurRadius="24" />
+            </local:TerminalView.Effect>
+        </local:TerminalView>
     </DockPanel>
     </Border>
 </Window>

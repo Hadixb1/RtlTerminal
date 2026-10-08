@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); ApplyViewportResize(); };
         _defaultProfile = LoadDefaultProfile();
         _historySize = AppSettings.LoadHistorySize();
-ApplySavedFontSettings();
+        ApplySavedFontSettings();
         UpdateFontMetrics();
     }
 
@@ -397,12 +397,10 @@ ApplySavedFontSettings();
             return;
         }
 
-        if (text == "?" && KeyboardHelper.IsPersianKeyboard())
-        {
-            InputDebug.Log("TEXTINPUT mapped ASCII ? -> U+061F");
-            text = "\u061f";
-        }
-
+        // WPF delivers the composed character here regardless of layout, IME, or
+        // third-party Persian layouts. This is the single source of truth for all
+        // printable characters — no layout detection, no KeyDown handling for ? or
+        // any other printable key.
         InputDebug.Log($"TEXTINPUT write {InputDebug.CodePoints(text)}");
         _session.Write(text);
         e.Handled = true;
@@ -1316,21 +1314,6 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             var controlCharacter = (char)(e.Key - Key.A + 1);
             _session.Write(controlCharacter.ToString());
             e.Handled = true;
-            return;
-        }
-
-        if (!controlPressed &&
-            GetEffectiveKey(e) == Key.OemQuestion)
-        {
-            // REWRITE of the question-mark path (from scratch, single rule):
-            // The character the OS composed for this key press is ALWAYS the ground
-            // truth — WPF delivers it in PreviewTextInput, regardless of layout, IME,
-            // or third-party Persian layouts whose OemQuestion mapping differs.
-            // Do NOT write the character here and do NOT set Handled: handling a
-            // printable key on KeyDown suppresses TextInput entirely (the old bug —
-            // the composed char never reached the session on machines whose layout
-            // maps ? differently). Just log and return; TextInput does the write.
-            InputDebug.Log($"KEYDOWN OemQuestion (mods={Keyboard.Modifiers}) -> letting composed text flow to TextInput");
             return;
         }
 
