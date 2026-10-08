@@ -1149,6 +1149,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
                 Content = "×", FontSize = 15,
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 ToolTip = $"Close {tab.Title}", Tag = tab,
+                Focusable = false,
                 Style = (Style)FindResource("ChromeRoundButtonStyle")
             };
             System.Windows.Automation.AutomationProperties.SetName(closeButton, $"Close {tab.Title}");
@@ -1177,6 +1178,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             {
                 Content = label, HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Padding = new Thickness(12, 0, 4, 0), ToolTip = tab.Title, Tag = tab,
+                Focusable = false,
                 Foreground = new SolidColorBrush(isActive
                     ? Color.FromRgb(240, 244, 248) : Color.FromRgb(165, 174, 184)),
                 Style = (Style)FindResource("ChromeTabButtonStyle")

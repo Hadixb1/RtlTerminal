@@ -423,10 +423,12 @@
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button x:Name="NewTabButton" Width="32" Height="30" Content="+" FontSize="20"
                             HorizontalContentAlignment="Center" ToolTip="New terminal (Ctrl+Shift+T)"
+                            Focusable="False"
                             Style="{StaticResource ChromeRoundButtonStyle}" Click="NewTabButton_Click"
                             AutomationProperties.Name="New terminal" />
                     <Button Width="26" Height="30" Content="⌄" FontSize="14"
                             HorizontalContentAlignment="Center" ToolTip="Terminal profiles"
+                            Focusable="False"
                             Style="{StaticResource DarkTitleButtonStyle}" Click="ProfileMenuButton_Click"
                             AutomationProperties.Name="Terminal profiles" />
                 </StackPanel>
