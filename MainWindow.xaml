@@ -10,7 +10,7 @@
         MinWidth="480"
         MinHeight="300"
         UseLayoutRounding="True"
-        Background="#0c0c0c"
+        Background="#0d1117"
         WindowStyle="None"
         ResizeMode="CanResize"
         Loaded="Window_Loaded"
@@ -22,7 +22,7 @@
         PreviewDragOver="Window_PreviewDragOver"
         PreviewDrop="Window_PreviewDrop">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="46"
+        <shell:WindowChrome CaptionHeight="44"
                             ResizeBorderThickness="6"
                             CornerRadius="8"
                             GlassFrameThickness="0"
@@ -402,22 +402,15 @@
                 </Style.Triggers>
             </Style>
         </Border.Style>
-    <DockPanel Background="#0c0c0c">
+    <DockPanel Background="#0d1117">
         <Grid DockPanel.Dock="Top"
-              Height="46">
-            <Grid.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#2A2D33" Offset="0" />
-                    <GradientStop Color="#202124" Offset="1" />
-                </LinearGradientBrush>
-            </Grid.Background>
-            <Grid.Effect>
-                <DropShadowEffect Color="#000000" Opacity="0.5" ShadowDepth="2" BlurRadius="8" Direction="270" />
-            </Grid.Effect>
+              Height="44"
+              Background="#161b22">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="138" />
             </Grid.ColumnDefinitions>
+            <Border Grid.ColumnSpan="2" BorderBrush="#21262d" BorderThickness="0,0,0,1" />
 
             <DockPanel x:Name="TitleTabsHost" Grid.Column="0" Margin="8,0,20,0" LastChildFill="False"
                        SizeChanged="TitleTabsHost_SizeChanged">
@@ -427,14 +420,14 @@
                     <StackPanel x:Name="TabStrip" Orientation="Horizontal"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True" />
                 </ScrollViewer>
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="4,0,0,0"
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="4,0,0,0" VerticalAlignment="Center"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button x:Name="NewTabButton" Width="32" Height="30" Content="+" FontSize="20"
+                    <Button x:Name="NewTabButton" Width="30" Height="28" Content="+" FontSize="18"
                             HorizontalContentAlignment="Center" ToolTip="New terminal (Ctrl+Shift+T)"
                             Focusable="False"
                             Style="{StaticResource ChromeRoundButtonStyle}" Click="NewTabButton_Click"
                             AutomationProperties.Name="New terminal" />
-                    <Button Width="26" Height="30" Content="⌄" FontSize="14"
+                    <Button Width="24" Height="28" Content="⌄" FontSize="13" Margin="2,0,0,0"
                             HorizontalContentAlignment="Center" ToolTip="Terminal profiles"
                             Focusable="False"
                             Style="{StaticResource DarkTitleButtonStyle}" Click="ProfileMenuButton_Click"
@@ -447,6 +440,7 @@
                         HorizontalAlignment="Right"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button Width="46"
+                        Focusable="False"
                         Style="{StaticResource WindowCaptionButtonStyle}"
                         ToolTip="Minimize" AutomationProperties.Name="Minimize"
                         Click="MinimizeButton_Click">
@@ -455,6 +449,7 @@
                 </Button>
                 <Button x:Name="MaximizeButton"
                         Width="46"
+                        Focusable="False"
                         Style="{StaticResource WindowCaptionButtonStyle}"
                         ToolTip="Maximize / Restore" AutomationProperties.Name="Maximize or restore"
                         Click="MaximizeButton_Click">
@@ -462,6 +457,7 @@
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                 </Button>
                 <Button Width="46"
+                        Focusable="False"
                         Style="{StaticResource WindowCaptionButtonStyle}"
                         Tag="Close"
                         ToolTip="Close window" AutomationProperties.Name="Close window"
@@ -472,26 +468,41 @@
             </StackPanel>
         </Grid>
 
-        <Border DockPanel.Dock="Top" Background="#303134" BorderBrush="#3C4043" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Top" Background="#161b22" BorderBrush="#21262d" BorderThickness="0,0,0,1">
         <DockPanel Margin="8,0,14,3">
-        <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="10" Margin="14,0,0,0"
-                   ToolTip="Smart RTL automatically handles Persian and mixed-direction text">
-            <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                    <Setter Property="Text" Value="●  SMART RTL" />
-                    <Setter Property="Foreground" Value="#72D6C5" />
+        <Border DockPanel.Dock="Right" CornerRadius="8" Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="#0d2d2a" />
+                    <Setter Property="BorderBrush" Value="#134e4a" />
+                    <Setter Property="BorderThickness" Value="1" />
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding IsChecked, ElementName=SmartRtlMenuItem}" Value="False">
-                            <Setter Property="Text" Value="RTL OFF" />
-                            <Setter Property="Foreground" Value="#8B949E" />
+                            <Setter Property="Background" Value="#161b22" />
+                            <Setter Property="BorderBrush" Value="#30363d" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </TextBlock.Style>
-        </TextBlock>
-        <Menu Height="28" FontFamily="Segoe UI" FontSize="12"
+            </Border.Style>
+            <TextBlock FontSize="10" FontWeight="SemiBold"
+                       ToolTip="Smart RTL automatically handles Persian and mixed-direction text">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Text" Value="●  SMART RTL" />
+                        <Setter Property="Foreground" Value="#2dd4bf" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsChecked, ElementName=SmartRtlMenuItem}" Value="False">
+                                <Setter Property="Text" Value="○  RTL OFF" />
+                                <Setter Property="Foreground" Value="#8b949e" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Border>
+        <Menu Height="26" FontFamily="Segoe UI" FontSize="12"
               Background="Transparent"
-              Foreground="#f0f0f0"
+              Foreground="#c9d1d9"
               ItemContainerStyle="{StaticResource DarkTopLevelMenuItemStyle}">
             <MenuItem Header="_File">
                 <MenuItem x:Name="LastDirectoriesMenuItem"
@@ -543,8 +554,8 @@
         </Border>
 
         <local:TerminalView x:Name="TerminalTextBox"
-                     Background="#0c0c0c"
-                     Foreground="#e6e6e6"
+                     Background="#0d1117"
+                     Foreground="#f0f6fc"
                      BorderThickness="0"
                      Padding="10"
                      FontFamily="Cascadia Mono, Consolas"

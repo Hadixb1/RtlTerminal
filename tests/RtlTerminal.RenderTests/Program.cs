@@ -93,8 +93,8 @@ internal static class Program
         var buffer = new TerminalBuffer(70, 16);
         byte[] Pixels(RenderTargetBitmap bitmap)
         {
-            var data = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
-            bitmap.CopyPixels(data, bitmap.PixelWidth * 4, 0);
+            var data = new byte[750 * bitmap.PixelHeight * 4];
+            bitmap.CopyPixels(new Int32Rect(0, 0, 750, bitmap.PixelHeight), data, 750 * 4, 0);
             return data;
         }
         const string sample = "f j Italic text / متن فارسی";
@@ -296,8 +296,8 @@ internal static class Program
         {
             tabs.Clear();
             for (var i = 0; i < count; i++)
-                tabs.Add(Activator.CreateInstance(tabType, i + 1, Enum.ToObject(profileType, i % 3),
-                    i % 3 == 0 ? "Command Prompt" : i % 3 == 1 ? "PowerShell" : "WSL"));
+                tabs.Add(Activator.CreateInstance(tabType, i + 1, Enum.ToObject(profileType, i % 2),
+                    i % 2 == 0 ? "PowerShell" : "Command Prompt"));
             typeof(MainWindow).GetField("_activeTab", flags)!.SetValue(window, tabs[count - 1]);
             typeof(MainWindow).GetMethod("RebuildTabStrip", flags)!.Invoke(window, null);
             var root = (FrameworkElement)window.Content;

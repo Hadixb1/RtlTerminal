@@ -167,9 +167,7 @@ public sealed class TerminalView : ContentControl
             {
                 var fraction = (visualX - cell.X) / cell.Width;
                 if (cell.Rtl) fraction = 1 - fraction;
-                // Round to the nearest logical boundary so clicking the trailing half of a character
-                // places the cursor after it, just like a text editor.
-                return column + Math.Clamp((int)Math.Round(fraction * columns), 0, columns);
+                return column + Math.Clamp((int)(fraction * columns), 0, Math.Max(0, columns - 1));
             }
             column += columns;
         }
@@ -199,10 +197,11 @@ public sealed class TerminalView : ContentControl
         for (var row = start.Row; row <= end.Row && row < _snapshot.Lines.Count; row++)
         {
             var text = Text(_snapshot.Lines[row]);
-            var from = row == start.Row ? Math.Min(start.Offset, text.Length) : 0;
-            var to = row == end.Row ? Math.Min(end.Offset, text.Length) : text.Length;
+            var from = row == start.Row ? Math.Clamp(start.Offset, 0, text.Length) : 0;
+            var to = row == end.Row ? Math.Clamp(end.Offset, 0, text.Length) : text.Length;
             if (row > start.Row) result.AppendLine();
-            result.Append(text[from..Math.Max(from, to)]);
+            if (from < to && text.Length > 0)
+                result.Append(text[from..to]);
         }
         return result.ToString();
     }
@@ -245,15 +244,44 @@ public sealed class TerminalView : ContentControl
             e.Handled = true;
             return;
         }
-        _anchor = _end = hit;
-        if (e.ClickCount == 2 && _snapshot is not null)
+
+        if (e.ClickCount >= 3 && _snapshot is not null)
+        {
+            var lineLength = Text(_snapshot.Lines[hit.Value.Row]).Length;
+            _anchor = (hit.Value.Row, 0);
+            _end = (hit.Value.Row, lineLength);
+        }
+        else if (e.ClickCount == 2 && _snapshot is not null)
         {
             var text = Text(_snapshot.Lines[hit.Value.Row]);
-            var start = Math.Min(hit.Value.Offset, text.Length); var end = start;
-            while (start > 0 && !char.IsWhiteSpace(text[start - 1])) start--;
-            while (end < text.Length && !char.IsWhiteSpace(text[end])) end++;
-            _anchor = (hit.Value.Row, start); _end = (hit.Value.Row, end);
+            var offset = Math.Clamp(hit.Value.Offset, 0, text.Length);
+            if (text.Length > 0)
+            {
+                if (offset == text.Length && offset > 0)
+                    offset--;
+
+                var isSpace = char.IsWhiteSpace(text[offset]);
+                var start = offset;
+                var end = offset;
+
+                while (start > 0 && char.IsWhiteSpace(text[start - 1]) == isSpace)
+                    start--;
+                while (end < text.Length && char.IsWhiteSpace(text[end]) == isSpace)
+                    end++;
+
+                _anchor = (hit.Value.Row, start);
+                _end = (hit.Value.Row, end);
+            }
+            else
+            {
+                _anchor = _end = hit;
+            }
         }
+        else
+        {
+            _anchor = _end = hit;
+        }
+
         _dragging = true;
         _surface.CaptureMouse();
         _surface.InvalidateVisual();
@@ -274,13 +302,45 @@ public sealed class TerminalView : ContentControl
     private (int Row, int Offset)? Hit(Point point)
     {
         if (_snapshot is not { Lines.Count: > 0 }) return null;
+
+        if (point.Y < 0)
+            return (0, 0);
+
+        if (point.Y >= _snapshot.Lines.Count * _lineHeight)
+        {
+            var lastRow = _snapshot.Lines.Count - 1;
+            return (lastRow, Text(_snapshot.Lines[lastRow]).Length);
+        }
+
         var row = Math.Clamp((int)(point.Y / _lineHeight), 0, _snapshot.Lines.Count - 1);
+        var line = _snapshot.Lines[row];
         var layout = Layout(row);
-        var closest = layout.Cells.FirstOrDefault(cell => point.X >= cell.X && point.X < cell.X + cell.Width)
-            ?? layout.Cells.MinBy(cell => Math.Abs(cell.X + cell.Width / 2 - point.X));
+        var text = Text(line);
+
+        if (layout.Cells.Count == 0 || text.Length == 0)
+            return (row, 0);
+
+        var rightAlign = _rowRtl || SmartRtl.ShouldRightAlign(line, _smartRtl, _snapshot.Modes.AlternateScreen);
+        var minX = layout.Cells.Min(c => c.X);
+        var maxX = layout.Cells.Max(c => c.X + c.Width);
+
+        if (point.X <= minX)
+            return (row, rightAlign ? text.Length : 0);
+
+        if (point.X >= maxX)
+            return (row, rightAlign ? 0 : text.Length);
+
+        var hit = layout.Cells.FirstOrDefault(cell => point.X >= cell.X && point.X < cell.X + cell.Width);
+        if (hit is not null)
+        {
+            var after = point.X >= hit.X + hit.Width / 2;
+            return (row, (after != hit.Rtl) ? hit.Start + hit.Length : hit.Start);
+        }
+
+        var closest = layout.Cells.MinBy(cell => Math.Abs(cell.X + cell.Width / 2 - point.X));
         if (closest is null) return (row, 0);
-        var after = point.X >= closest.X + closest.Width / 2;
-        return (row, (after != closest.Rtl) ? closest.Start + closest.Length : closest.Start);
+        var afterClosest = point.X >= closest.X + closest.Width / 2;
+        return (row, (afterClosest != closest.Rtl) ? closest.Start + closest.Length : closest.Start);
     }
 
     private RowLayout Layout(int row)
@@ -353,6 +413,15 @@ public sealed class TerminalView : ContentControl
         return result;
     }
 
+    private static readonly Brush SelectionBrush = CreateFrozenBrush(Color.FromArgb(100, 70, 125, 200));
+
+    private static Brush CreateFrozenBrush(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
     private static TerminalStyle StyleAt(TerminalLine line, int offset)
     {
         foreach (var run in line.Runs) { if (offset < run.Text.Length) return run.Style; offset -= run.Text.Length; }
@@ -405,8 +474,12 @@ public sealed class TerminalView : ContentControl
             {
                 var (start, end) = SelectionRange();
                 if (row >= start.Row && row <= end.Row)
-                    foreach (var cell in layout.Cells.Where(cell => (row != start.Row || cell.Start + cell.Length > start.Offset) && (row != end.Row || cell.Start < end.Offset)))
-                        dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(100, 70, 125, 200)), null, new Rect(cell.X, y, cell.Width, _lineHeight));
+                {
+                    var rowFrom = row == start.Row ? start.Offset : 0;
+                    var rowTo = row == end.Row ? end.Offset : int.MaxValue;
+                    foreach (var cell in layout.Cells.Where(cell => cell.Start + cell.Length > rowFrom && cell.Start < rowTo))
+                        dc.DrawRectangle(SelectionBrush, null, new Rect(cell.X, y, cell.Width, _lineHeight));
+                }
             }
             if (_snapshot.CursorVisible && row == _snapshot.CursorRow)
             {

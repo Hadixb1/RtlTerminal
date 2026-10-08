@@ -21,7 +21,6 @@ namespace RtlTerminal;
 public partial class MainWindow : Window
 {
     private readonly object _renderLock = new();
-    private readonly DispatcherTimer _renderTimer;
     private readonly DispatcherTimer _resizeTimer;
     private readonly List<TerminalTab> _tabs = [];
     private readonly List<string> _temporaryClipboardFiles = [];
@@ -40,7 +39,7 @@ public partial class MainWindow : Window
     private bool _restoringScrollPosition;
     private int _nextTabNumber = 1;
     private bool _renderedSmartRtlEnabled = true;
-    private TerminalProfile _defaultProfile = TerminalProfile.CommandPrompt;
+    private TerminalProfile _defaultProfile = TerminalProfile.PowerShell;
     private int _historySize = 2000;
     private bool _updateCheckInProgress;
     private bool _suppressRightMouseUp;
@@ -65,11 +64,6 @@ public partial class MainWindow : Window
             { MessageBox.Show(this, exception.Message, "Open link", MessageBoxButton.OK, MessageBoxImage.Error); }
         };
         SmartRtlMenuItem.IsChecked = true;
-        _renderTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(16)
-        };
-        _renderTimer.Tick += RenderTimer_Tick;
         _resizeTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(80) };
         _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); ApplyViewportResize(); };
         _defaultProfile = LoadDefaultProfile();
@@ -227,12 +221,8 @@ public partial class MainWindow : Window
             Style = (Style)FindResource("DarkContextMenuStyle")
         };
 
-        AddProfileMenuItem(menu, "Command Prompt", TerminalProfile.CommandPrompt);
         AddProfileMenuItem(menu, "PowerShell", TerminalProfile.PowerShell);
-        AddProfileMenuItem(menu, "PowerShell (No VT)", TerminalProfile.PowerShellNoVT);
-
-        if (IsWslAvailable())
-            AddProfileMenuItem(menu, "WSL", TerminalProfile.Wsl);
+        AddProfileMenuItem(menu, "Command Prompt", TerminalProfile.CommandPrompt);
 
         menu.PlacementTarget = sender as UIElement;
         menu.IsOpen = true;
@@ -980,45 +970,32 @@ public partial class MainWindow : Window
         profile switch
         {
             TerminalProfile.PowerShell => "PowerShell",
-            TerminalProfile.Wsl => "WSL",
             _ => "Command Prompt"
         };
 
     private static string GetProfileCommand(TerminalProfile profile)
-        {
-            var esc = '\x1b';
-            return (profile switch
-            {
-                TerminalProfile.PowerShell =>
-                    $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
-                TerminalProfile.PowerShellNoVT =>
-                    $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""$env:PT_DISABLE_VT='1'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
-                TerminalProfile.Wsl =>
-                    "C:\\Windows\\System32\\wsl.exe --exec sh -lc \"printf '%b\\n' '\\033[31m+--------------------------------------------------------+' '| RtlTerminal v" + AppVersion.Display + "                                     |' '| by Hadi                                                |' '+--------------------------------------------------------+' '\\033[32m'; PS1='\\[\\033[31m\\]\\u@\\h:\\w$ \\[\\033[32m\\]'; exec \"${SHELL:-/bin/bash}\" -l",
-                _ =>
-                    $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""""
-            }).Replace("{APP_VERSION}", AppVersion.Display);
-        }
-
-    private static bool IsWslAvailable()
     {
-        var windowsDirectory =
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        return File.Exists(Path.Combine(windowsDirectory, "System32", "wsl.exe"));
+        var esc = '\x1b';
+        return (profile switch
+        {
+            TerminalProfile.PowerShell =>
+                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""$env:PT_DISABLE_VT='1'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
+            _ =>
+                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""""
+        }).Replace("{APP_VERSION}", AppVersion.Display);
     }
 
     private static TerminalProfile LoadDefaultProfile()
     {
         var savedProfile = AppSettings.LoadTerminalProfile();
 
-        if (!Enum.TryParse(savedProfile, out TerminalProfile profile) ||
-            !Enum.IsDefined(profile) ||
-            profile == TerminalProfile.Wsl && !IsWslAvailable())
+        if (Enum.TryParse(savedProfile, out TerminalProfile profile) &&
+            Enum.IsDefined(profile))
         {
-            return TerminalProfile.CommandPrompt;
+            return profile;
         }
 
-        return profile;
+        return TerminalProfile.PowerShell;
     }
 
     private void SaveActiveTabState()
@@ -1078,7 +1055,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         RebuildTabStrip();
 
         if (_pendingSnapshot is not null)
-            StartRenderTimer();
+            QueueRender(_pendingSnapshot);
         else if (_lastRenderedSnapshot is not null &&
             (_renderedSmartRtlEnabled != SmartRtlMenuItem.IsChecked))
         {
@@ -1142,12 +1119,16 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         foreach (var tab in _tabs)
         {
             var isActive = ReferenceEquals(tab, _activeTab);
-            var accent = new SolidColorBrush(Color.FromRgb(114, 214, 197));
-            var panel = new DockPanel { Height = 34 };
+            var isPs = tab.Profile == TerminalProfile.PowerShell;
+            var accentColor = isPs ? Color.FromRgb(45, 212, 191) : Color.FromRgb(251, 146, 60);
+            var accentBrush = new SolidColorBrush(accentColor);
+            accentBrush.Freeze();
+
+            var panel = new DockPanel { Height = 32 };
             var closeButton = new Button
             {
-                Width = 26, Height = 24, Margin = new Thickness(0, 0, 5, 0),
-                Content = "×", FontSize = 15,
+                Width = 22, Height = 22, Margin = new Thickness(0, 0, 4, 0),
+                Content = "×", FontSize = 14,
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 ToolTip = $"Close {tab.Title}", Tag = tab,
                 Focusable = false,
@@ -1157,14 +1138,14 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             closeButton.Click += TabCloseButton_Click;
             DockPanel.SetDock(closeButton, Dock.Right);
             panel.Children.Add(closeButton);
+
             var label = new DockPanel();
             var icon = new TextBlock
             {
-                Text = tab.Profile == TerminalProfile.PowerShell ? "›_" :
-                    tab.Profile == TerminalProfile.Wsl ? "$_" : ">_",
-                FontFamily = new FontFamily("Consolas"), FontSize = 13,
-                Foreground = isActive ? accent : new SolidColorBrush(Color.FromRgb(139, 148, 158)),
-                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0)
+                Text = isPs ? "›_" : ">_",
+                FontFamily = new FontFamily("Consolas"), FontSize = 12, FontWeight = FontWeights.Bold,
+                Foreground = isActive ? accentBrush : new SolidColorBrush(Color.FromRgb(139, 148, 158)),
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0)
             };
             DockPanel.SetDock(icon, Dock.Left);
             label.Children.Add(icon);
@@ -1175,38 +1156,66 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
             });
+
             var selectButton = new Button
             {
                 Content = label, HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(12, 0, 4, 0), ToolTip = tab.Title, Tag = tab,
+                Padding = new Thickness(10, 0, 4, 0), ToolTip = tab.Title, Tag = tab,
                 Focusable = false,
                 Foreground = new SolidColorBrush(isActive
-                    ? Color.FromRgb(240, 244, 248) : Color.FromRgb(165, 174, 184)),
+                    ? Color.FromRgb(240, 246, 252) : Color.FromRgb(139, 148, 158)),
                 Style = (Style)FindResource("ChromeTabButtonStyle")
             };
             System.Windows.Automation.AutomationProperties.SetName(selectButton, tab.Title);
             selectButton.Click += TabButton_Click;
             panel.Children.Add(selectButton);
-            var grid = new Grid { Width = 220, Height = 38, Margin = new Thickness(0, 8, 0, 0) };
-            var activeBrush = new SolidColorBrush(Color.FromRgb(48, 49, 52));
-            var shape = new System.Windows.Shapes.Path
+
+            var tabCard = new Border
             {
-                Data = Geometry.Parse("M0,38 Q8,38 8,30 L8,12 Q8,0 20,0 L200,0 Q212,0 212,12 L212,30 Q212,38 220,38 Z"),
-                Fill = isActive ? activeBrush : Brushes.Transparent, IsHitTestVisible = false
+                Width = 200,
+                Height = 36,
+                Margin = new Thickness(0, 4, 4, 0),
+                CornerRadius = new CornerRadius(6, 6, 0, 0),
+                Background = isActive ? new SolidColorBrush(Color.FromRgb(33, 38, 45)) : Brushes.Transparent,
+                BorderBrush = isActive ? new SolidColorBrush(Color.FromRgb(48, 54, 61)) : Brushes.Transparent,
+                BorderThickness = new Thickness(1, 1, 1, 0)
             };
-            grid.Children.Add(shape);
-            if (!isActive) grid.Children.Add(new Border
-            {
-                Width = 1, Height = 18, Background = new SolidColorBrush(Color.FromRgb(78, 80, 84)),
-                HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false
-            });
-            panel.Margin = new Thickness(8, 0, 8, 0);
-            grid.Children.Add(panel);
-            grid.MouseEnter += (_, _) => shape.Fill = isActive ? activeBrush : new SolidColorBrush(Color.FromRgb(42, 43, 47));
-            grid.MouseLeave += (_, _) => shape.Fill = isActive ? activeBrush : Brushes.Transparent;
-            TabStrip.Children.Add(grid);
+
+            var cardGrid = new Grid();
             if (isActive)
-                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => grid.BringIntoView());
+            {
+                var topIndicator = new Border
+                {
+                    Height = 2.5,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Background = accentBrush,
+                    CornerRadius = new CornerRadius(1.25)
+                };
+                cardGrid.Children.Add(topIndicator);
+            }
+            cardGrid.Children.Add(panel);
+            tabCard.Child = cardGrid;
+
+            tabCard.MouseEnter += (_, _) =>
+            {
+                if (!ReferenceEquals(tab, _activeTab))
+                {
+                    tabCard.Background = new SolidColorBrush(Color.FromRgb(22, 27, 34));
+                    tabCard.BorderBrush = new SolidColorBrush(Color.FromRgb(48, 54, 61));
+                }
+            };
+            tabCard.MouseLeave += (_, _) =>
+            {
+                if (!ReferenceEquals(tab, _activeTab))
+                {
+                    tabCard.Background = Brushes.Transparent;
+                    tabCard.BorderBrush = Brushes.Transparent;
+                }
+            };
+
+            TabStrip.Children.Add(tabCard);
+            if (isActive)
+                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => tabCard.BringIntoView());
         }
     }
 
@@ -1715,7 +1724,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             _latestQueuedRevision = tab.LatestQueuedRevision;
             _pendingSnapshot = tab.PendingSnapshot;
 
-            if (_renderTimer.IsEnabled || _renderStartQueued)
+            if (_renderStartQueued)
                 return;
 
             _renderStartQueued = true;
@@ -1723,29 +1732,19 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         }
 
         Dispatcher.BeginInvoke(
-            DispatcherPriority.Background,
-            StartRenderTimer);
+            DispatcherPriority.Render,
+            ProcessQueuedRender);
     }
 
-    private void StartRenderTimer()
+    private void ProcessQueuedRender()
     {
+        TerminalSnapshot? snapshot;
         lock (_renderLock)
         {
             _renderStartQueued = false;
             if (_activeTab is not null)
                 _activeTab.RenderStartQueued = false;
-        }
 
-        if (!_renderTimer.IsEnabled)
-            _renderTimer.Start();
-    }
-
-    private void RenderTimer_Tick(object? sender, EventArgs e)
-    {
-        TerminalSnapshot? snapshot;
-
-        lock (_renderLock)
-        {
             snapshot = _pendingSnapshot;
             _pendingSnapshot = null;
 
@@ -1758,8 +1757,13 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
 
         lock (_renderLock)
         {
-            if (_pendingSnapshot is null)
-                _renderTimer.Stop();
+            if (_pendingSnapshot is not null && !_renderStartQueued)
+            {
+                _renderStartQueued = true;
+                if (_activeTab is not null)
+                    _activeTab.RenderStartQueued = true;
+                Dispatcher.BeginInvoke(DispatcherPriority.Render, ProcessQueuedRender);
+            }
         }
     }
 
@@ -1867,10 +1871,8 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
 
     private enum TerminalProfile
     {
-        CommandPrompt,
         PowerShell,
-        PowerShellNoVT,
-        Wsl
+        CommandPrompt
     }
 
     private sealed class TerminalTab(

@@ -18,8 +18,12 @@ public static class InputDebug
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "RtlTerminal", "input_debug.log");
 
+    private static readonly bool Enabled =
+        Environment.GetEnvironmentVariable("RTLTERMINAL_DEBUG") == "1";
+
     public static void Log(string message)
     {
+        if (!Enabled) return;
         try
         {
             lock (Gate)
