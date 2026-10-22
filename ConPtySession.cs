@@ -251,11 +251,19 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             return;
         }
 
-        // Lone ASCII '?' through the ConPTY pipe causes conhost to synthesise
-        // ALT-modified records with '?' only on KEY-UP, which prompt_toolkit (Hermes)
-        // drops. WriteKeyChar delivers it on KEY-DOWN directly to CONIN$.
-        if (text == "?" && WriteKeyChar('?', shiftPressed: true))
-            return;
+        // Lone ASCII '?' or Persian '؟' through the ConPTY pipe:
+        // conhost synthesises lone ASCII '?' as ALT-modified records with '?' only on KEY-UP,
+        // which prompt_toolkit (Hermes) drops.
+        // ConPTY natively supports the standard win32-input-mode escape sequence (\x1b[Vk;Sc;Uc;Kd;Cs;Rc_)
+        // which delivers true KEY-DOWN records directly to the child's console input buffer for all apps (CMD, PS, Hermes).
+        if (text == "?")
+        {
+            text = "\x1b[191;53;63;1;16;1_\x1b[191;53;63;0;16;1_";
+        }
+        else if (text is "؟" or "\u061f")
+        {
+            text = "\x1b[191;53;1567;1;16;1_\x1b[191;53;1567;0;16;1_";
+        }
 
         var bytes = Encoding.UTF8.GetBytes(text);
         lock (_inputLock)
@@ -269,7 +277,7 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             {
                 _inputWriter.Write(bytes, 0, bytes.Length);
                 _inputWriter.Flush();
-                if (text.Contains('?') || text.Contains('\u061f'))
+                if (text.Contains('?') || text.Contains('\u061f') || text.StartsWith("\x1b[191;"))
                     InputDebug.Log($"WRITE ok bytes={bytes.Length} hex={InputDebug.Hex(bytes)}");
             }
             catch (IOException exception)
@@ -372,91 +380,17 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     }
 
     /// <summary>
-    /// Synthetic KEY-DOWN/KEY-UP pair carrying <paramref name="character"/> on both
-    /// records, for characters conhost otherwise delivers on KEY-UP only (U+061F among
-    /// them — prompt_toolkit reads KEY-DOWN only and silently drops the keystroke).
-    /// <paramref name="layout"/> is the HKL that produced the keystroke (the layout of
-    /// the thread that received the KeyDown); IntPtr.Zero falls back to the caller's
-    /// own layout.
+    /// Writes a key character using the ConPTY standard win32-input-mode sequence.
+    /// Delivers true KEY-DOWN and KEY-UP records directly to the console input buffer.
     /// </summary>
     public bool WriteKeyChar(char character, bool shiftPressed, IntPtr layout)
     {
-        if (_processInfo.dwProcessId == 0)
-            return false;
-
-        if (!EnterChildConsole())
-            return false;
-
-        var handle = CreateFileW("CONIN$", GENERIC_READ_WRITE, FILE_SHARE_RW, IntPtr.Zero,
-            OPEN_EXISTING_FILE, 0, IntPtr.Zero);
-        if (handle == IntPtr.Zero || handle == new IntPtr(-1))
-        {
-            InputDebug.Log($"WriteKeyChar CONIN$ failed gle={Marshal.GetLastWin32Error()}");
-            FreeConsole();
-            return false;
-        }
-
-        // conhost validates an injected record's uChar against the CONSOLE's own
-        // keyboard layout and rewrites the character from wVirtualKeyCode whenever
-        // the two disagree (measured on a real pseudoconsole: a record carrying
-        // U+061F with vk=0xBF reached the child as U+003F, as did vk=0x00). So the
-        // record is only reliable for characters the console layout itself produces
-        // — '?' on a US console — and the vk must come from that same layout, which
-        // is what the caller passes in.
-        var hkl = layout != IntPtr.Zero ? layout : GetKeyboardLayout(0);
-        var scan = VkKeyScanExW(character, hkl);
-        byte vk;
-        byte modifiers;
-        if (scan == -1)
-        {
-            if (character == '?')
-            {
-                vk = 0xBF; // VK_OEM_2 (/ ?)
-                modifiers = 0x01; // Shift
-            }
-            else
-            {
-                InputDebug.Log($"WriteKeyChar VkKeyScanExW('{character}') unroutable on hkl=0x{hkl.ToInt64():X}");
-                CloseHandle(handle);
-                FreeConsole();
-                return false;
-            }
-        }
-        else
-        {
-            vk = (byte)(scan & 0xFF);
-            modifiers = (byte)((scan >> 8) & 0xFF);
-        }
-
-        var state = 0u;
-        // VkKeyScanExW reports shift in the LOW bits of the high byte (1=shift,
-        // 2=ctrl, 4=alt); the old 0x10 mask never matched. Honour the caller too:
-        // PATH-A always passes shiftPressed:true for Shift+/.
-        if (shiftPressed || (modifiers & 0x01) != 0)
-            state |= SHIFT_PRESSED;
-
-        var records = new INPUT_RECORD_NATIVE[2];
-        records[0] = new INPUT_RECORD_NATIVE
-        {
-            EventType = (ushort)KEY_EVENT_TYPE,
-            KeyEvent = new KEY_EVENT_RECORD_NATIVE
-            {
-                bKeyDown = 1, wRepeatCount = 1, wVirtualKeyCode = vk,
-                wVirtualScanCode = (ushort)MapVirtualKeyEx(vk, MAPVK_VK_TO_VSC, IntPtr.Zero),
-                uChar = character, dwControlKeyState = state,
-            },
-        };
-        records[1] = records[0];
-        records[1].KeyEvent.bKeyDown = 0;
-
-        var ok = WriteConsoleInputW(handle, records, (uint)records.Length, out var written);
-        InputDebug.Log(ok
-            ? $"KEYEV write ok events={written} char=U+{(int)character:X4} vk=0x{vk:X2}"
-            : $"KEYEV write failed gle={Marshal.GetLastWin32Error()}");
-
-        CloseHandle(handle);
-        FreeConsole();
-        return ok && written == records.Length;
+        ushort vk = (character == '?' || character == '\u061f') ? (ushort)0xBF : (ushort)character;
+        ushort sc = (vk == 0xBF) ? (ushort)0x35 : (ushort)0;
+        uint cs = shiftPressed ? 0x10u : 0u;
+        var seq = $"\x1b[{vk};{sc};{(int)character};1;{cs};1_\x1b[{vk};{sc};{(int)character};0;{cs};1_";
+        Write(seq);
+        return true;
     }
 
     public void Resize(short columns, short rows)
