@@ -251,6 +251,12 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             return;
         }
 
+        // Lone ASCII '?' through the ConPTY pipe causes conhost to synthesise
+        // ALT-modified records with '?' only on KEY-UP, which prompt_toolkit (Hermes)
+        // drops. WriteKeyChar delivers it on KEY-DOWN directly to CONIN$.
+        if (text == "?" && WriteKeyChar('?', shiftPressed: true))
+            return;
+
         var bytes = Encoding.UTF8.GetBytes(text);
         lock (_inputLock)
         {
@@ -399,16 +405,28 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         // is what the caller passes in.
         var hkl = layout != IntPtr.Zero ? layout : GetKeyboardLayout(0);
         var scan = VkKeyScanExW(character, hkl);
+        byte vk;
+        byte modifiers;
         if (scan == -1)
         {
-            InputDebug.Log($"WriteKeyChar VkKeyScanExW('{character}') unroutable on hkl=0x{hkl.ToInt64():X}");
-            CloseHandle(handle);
-            FreeConsole();
-            return false;
+            if (character == '?')
+            {
+                vk = 0xBF; // VK_OEM_2 (/ ?)
+                modifiers = 0x01; // Shift
+            }
+            else
+            {
+                InputDebug.Log($"WriteKeyChar VkKeyScanExW('{character}') unroutable on hkl=0x{hkl.ToInt64():X}");
+                CloseHandle(handle);
+                FreeConsole();
+                return false;
+            }
         }
-
-        var vk = (byte)(scan & 0xFF);
-        var modifiers = (byte)((scan >> 8) & 0xFF);
+        else
+        {
+            vk = (byte)(scan & 0xFF);
+            modifiers = (byte)((scan >> 8) & 0xFF);
+        }
 
         var state = 0u;
         // VkKeyScanExW reports shift in the LOW bits of the high byte (1=shift,

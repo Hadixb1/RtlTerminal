@@ -1,15 +1,17 @@
 $dst = 'C:\Program Files\behnamapps\Rtl Terminal\RtlTerminal.exe'
-$src = 'C:\Users\hadixb\RtlTerminal-work\publish\win-x64\RtlTerminal.exe'
-$log = 'C:\Users\hadixb\RtlTerminal-work\replace_log.txt'
+$src = Join-Path $PSScriptRoot 'publish\win-x64\RtlTerminal.exe'
+$log = Join-Path $PSScriptRoot 'replace_log.txt'
 
 function Note([string]$m) {
     Add-Content -Path $log -Value ("$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  " + $m)
 }
 
 Note "replace_elevated started"
+$oldVer = try { (Get-Item $dst).VersionInfo.FileVersion } catch { 'old' }
+$bakName = "RtlTerminal.exe.bak_$oldVer"
 try {
-    Rename-Item -Path $dst -NewName 'RtlTerminal.exe.bak_1.0.27' -Force -ErrorAction Stop
-    Note 'RENAME_OK'
+    Rename-Item -Path $dst -NewName $bakName -Force -ErrorAction Stop
+    Note "RENAME_OK -> $bakName"
 } catch {
     Note ("RENAME_FAILED: " + $_.Exception.Message)
     exit 1
@@ -22,6 +24,6 @@ try {
 } catch {
     Note ("COPY_FAILED: " + $_.Exception.Message)
     # rollback: put old file back
-    Rename-Item -Path (Join-Path (Split-Path $dst) 'RtlTerminal.exe.bak_1.0.27') -NewName 'RtlTerminal.exe' -Force -ErrorAction SilentlyContinue
+    Rename-Item -Path (Join-Path (Split-Path $dst) $bakName) -NewName 'RtlTerminal.exe' -Force -ErrorAction SilentlyContinue
     Note 'ROLLED_BACK'
 }
