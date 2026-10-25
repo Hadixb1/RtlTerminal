@@ -120,7 +120,8 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         // specified." and the shell never opens. The PS command already sets
         // [Console]::Input/OutputEncoding=UTF8 (which is SetConsoleCP from inside
         // the child) so the wrapper is redundant there.
-        if (!commandLine.Contains("powershell.exe", StringComparison.OrdinalIgnoreCase))
+        if (!commandLine.Contains("powershell.exe", StringComparison.OrdinalIgnoreCase) &&
+            !commandLine.Contains("chcp 65001", StringComparison.OrdinalIgnoreCase))
         {
             commandLine = $"cmd.exe /d /c \"chcp 65001>nul & {commandLine}\"";
         }
@@ -243,6 +244,9 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
 
 
+    private static readonly bool SupportsWin32InputMode =
+        Environment.OSVersion.Version.Build >= 22000;
+
     public void Write(string text)
     {
         if (_inputWriter is null)
@@ -252,17 +256,21 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         }
 
         // Lone ASCII '?' or Persian '؟' through the ConPTY pipe:
-        // conhost synthesises lone ASCII '?' as ALT-modified records with '?' only on KEY-UP,
-        // which prompt_toolkit (Hermes) drops.
-        // ConPTY natively supports the standard win32-input-mode escape sequence (\x1b[Vk;Sc;Uc;Kd;Cs;Rc_)
-        // which delivers true KEY-DOWN records directly to the child's console input buffer for all apps (CMD, PS, Hermes).
-        if (text == "?")
+        // On Windows 11 (Build >= 22000), ConPTY natively supports the standard win32-input-mode escape
+        // sequence (\x1b[Vk;Sc;Uc;Kd;Cs;Rc_) which delivers true KEY-DOWN records directly to the child's
+        // console input buffer (fixing prompt_toolkit/Hermes question mark drops).
+        // On Windows 10, ConPTY does NOT support win32-input-mode; sending \x1b[..._ there causes
+        // conhost to drop the sequence, so on Windows 10 we pass standard UTF-8 characters through.
+        if (SupportsWin32InputMode)
         {
-            text = "\x1b[191;53;63;1;16;1_\x1b[191;53;63;0;16;1_";
-        }
-        else if (text is "؟" or "\u061f")
-        {
-            text = "\x1b[191;53;1567;1;16;1_\x1b[191;53;1567;0;16;1_";
+            if (text == "?")
+            {
+                text = "\x1b[191;53;63;1;16;1_\x1b[191;53;63;0;16;1_";
+            }
+            else if (text is "؟" or "\u061f")
+            {
+                text = "\x1b[191;53;1567;1;16;1_\x1b[191;53;1567;0;16;1_";
+            }
         }
 
         var bytes = Encoding.UTF8.GetBytes(text);
@@ -385,11 +393,17 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     /// </summary>
     public bool WriteKeyChar(char character, bool shiftPressed, IntPtr layout)
     {
-        ushort vk = (character == '?' || character == '\u061f') ? (ushort)0xBF : (ushort)character;
-        ushort sc = (vk == 0xBF) ? (ushort)0x35 : (ushort)0;
-        uint cs = shiftPressed ? 0x10u : 0u;
-        var seq = $"\x1b[{vk};{sc};{(int)character};1;{cs};1_\x1b[{vk};{sc};{(int)character};0;{cs};1_";
-        Write(seq);
+        if (SupportsWin32InputMode)
+        {
+            ushort vk = (character == '?' || character == '\u061f') ? (ushort)0xBF : (ushort)character;
+            ushort sc = (vk == 0xBF) ? (ushort)0x35 : (ushort)0;
+            uint cs = shiftPressed ? 0x10u : 0u;
+            var seq = $"\x1b[{vk};{sc};{(int)character};1;{cs};1_\x1b[{vk};{sc};{(int)character};0;{cs};1_";
+            Write(seq);
+            return true;
+        }
+
+        Write(character.ToString());
         return true;
     }
 

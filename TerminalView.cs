@@ -185,7 +185,22 @@ public sealed class TerminalView : ContentControl
     public void CopySelection(bool clear = true)
     {
         if (!HasSelection || _snapshot is null) return;
-        Clipboard.SetDataObject(GetSelectedText(), true);
+        var text = GetSelectedText();
+        if (string.IsNullOrEmpty(text)) return;
+
+        for (var i = 0; i < 3; i++)
+        {
+            try
+            {
+                Clipboard.SetDataObject(text, false);
+                break;
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+                System.Threading.Thread.Sleep(5);
+            }
+        }
+
         if (clear) ClearSelection();
     }
 

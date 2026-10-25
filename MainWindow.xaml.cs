@@ -452,6 +452,7 @@ public partial class MainWindow : Window
 
         if (button < 0 || !SendMouseEvent(e, button, released: false))
         {
+            TerminalTextBox.Focus();
             if (e.ChangedButton == MouseButton.Left && _lastRenderedSnapshot is { } snapshot && _session is not null && Keyboard.Modifiers == ModifierKeys.None)
             {
                 if (TryGetMouseCell(e, out var cx, out var cy))
@@ -981,7 +982,7 @@ public partial class MainWindow : Window
             TerminalProfile.PowerShell =>
                 $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""$env:PT_DISABLE_VT='1'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
             _ =>
-                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""""
+                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""
         }).Replace("{APP_VERSION}", AppVersion.Display);
     }
 
@@ -1511,39 +1512,67 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         if (_session is null)
             return;
 
-        if (Clipboard.ContainsFileDropList())
+        IDataObject? dataObject = null;
+        for (var attempt = 0; attempt < 5; attempt++)
         {
-            var fileDropList = Clipboard.GetFileDropList();
-            var paths = new List<string>(fileDropList.Count);
-
-            for (var index = 0; index < fileDropList.Count; index++)
+            try
             {
-                if (!string.IsNullOrWhiteSpace(fileDropList[index]))
-                    paths.Add(fileDropList[index]!);
+                dataObject = Clipboard.GetDataObject();
+                if (dataObject is not null)
+                    break;
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+                System.Threading.Thread.Sleep(5);
+            }
+        }
+
+        if (dataObject is null)
+            return;
+
+        // Fast-path: text is 99.9% of terminal pastes. Check in-memory without extra clipboard roundtrips!
+        if (dataObject.GetDataPresent(DataFormats.UnicodeText, true) ||
+            dataObject.GetDataPresent(DataFormats.Text, true))
+        {
+            var rawText = dataObject.GetData(DataFormats.UnicodeText, true) as string
+                ?? dataObject.GetData(DataFormats.Text, true) as string;
+
+            if (!string.IsNullOrEmpty(rawText))
+            {
+                var text = rawText
+                    .Replace("\r\n", "\r")
+                    .Replace("\n", "\r");
+
+                WritePastedText(text);
+                return;
+            }
+        }
+
+        // File drop list: format paths for terminal
+        if (dataObject.GetDataPresent(DataFormats.FileDrop, true) &&
+            dataObject.GetData(DataFormats.FileDrop, true) is string[] files && files.Length > 0)
+        {
+            var paths = new List<string>(files.Length);
+            for (var index = 0; index < files.Length; index++)
+            {
+                if (!string.IsNullOrWhiteSpace(files[index]))
+                    paths.Add(files[index]);
             }
 
-            WriteClipboardPaths(paths);
-            return;
+            if (paths.Count > 0)
+            {
+                WriteClipboardPaths(paths);
+                return;
+            }
         }
 
-        if (Clipboard.ContainsImage())
+        // Image paste: save to temp and paste file path
+        if (dataObject.GetDataPresent(DataFormats.Bitmap, true))
         {
             var imagePath = SaveClipboardImage();
-
             if (imagePath is not null)
                 WriteClipboardPaths([imagePath]);
-
-            return;
         }
-
-        if (!Clipboard.ContainsText())
-            return;
-
-        var text = Clipboard.GetText()
-            .Replace("\r\n", "\r")
-            .Replace("\n", "\r");
-
-        WritePastedText(text);
     }
 
     private void WriteClipboardPaths(IReadOnlyList<string> paths)
