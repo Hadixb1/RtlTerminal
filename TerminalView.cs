@@ -214,7 +214,10 @@ public sealed class TerminalView : ContentControl
             var text = Text(_snapshot.Lines[row]);
             var from = row == start.Row ? Math.Clamp(start.Offset, 0, text.Length) : 0;
             var to = row == end.Row ? Math.Clamp(end.Offset, 0, text.Length) : text.Length;
-            if (row > start.Row) result.AppendLine();
+            // Soft-wrapped rows are one logical line: joining them keeps a
+            // copied command or URL usable instead of breaking it at the pane
+            // width.
+            if (row > start.Row && !_snapshot.Lines[row].WrappedFromPrevious) result.AppendLine();
             if (from < to && text.Length > 0)
                 result.Append(text[from..to]);
         }

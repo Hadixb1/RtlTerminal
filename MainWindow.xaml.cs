@@ -126,7 +126,25 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            // Do not leave a half-started pseudoconsole (and its pipes) behind:
+            // the tab stays open but inert with a readable error instead.
+            try
+            {
+                _session?.Dispose();
+            }
+            catch (Exception disposeException)
+            {
+                InputDebug.Log($"ConPTY cleanup failed: {disposeException.Message}");
+            }
+
+            _session = null;
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+
             var errorBuffer = new TerminalBuffer(GetColumns(), GetRows());
+            _terminalBuffer = errorBuffer;
+            _activeTab.Buffer = errorBuffer;
+            _activeTab.Session = null;
             Render(errorBuffer.Process("خطا در اجرای ConPTY:\r\n" + exception.Message));
         }
 
@@ -137,8 +155,18 @@ public partial class MainWindow : Window
     {
         SaveActiveTabState();
 
-        foreach (var tab in _tabs)
-            _ = tab.DisposeAsync();
+        // Let every pseudoconsole shut down before the process exits, otherwise
+        // a cmd.exe/powershell.exe child can outlive the window.
+        var disposals = _tabs.Select(tab => tab.DisposeAsync()).ToArray();
+
+        try
+        {
+            Task.WaitAll(disposals, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception exception)
+        {
+            InputDebug.Log($"Shutdown cleanup failed: {exception.Message}");
+        }
 
         CleanupTemporaryClipboardFiles();
     }
@@ -320,14 +348,18 @@ public partial class MainWindow : Window
     {
         var text = new StringBuilder();
 
-        foreach (var line in snapshot.Lines)
+        for (var index = 0; index < snapshot.Lines.Count; index++)
         {
+            var line = snapshot.Lines[index];
+
+            if (index > 0 && !line.WrappedFromPrevious)
+                text.AppendLine();
+
             foreach (var run in line.Runs)
                 text.Append(run.Text);
-
-            text.AppendLine();
         }
 
+        text.AppendLine();
         return text.ToString();
     }
 
@@ -453,31 +485,16 @@ public partial class MainWindow : Window
         if (button < 0 || !SendMouseEvent(e, button, released: false))
         {
             TerminalTextBox.Focus();
-            if (e.ChangedButton == MouseButton.Left && _lastRenderedSnapshot is { } snapshot && _session is not null && Keyboard.Modifiers == ModifierKeys.None)
+            if (e.ChangedButton == MouseButton.Left &&
+                _lastRenderedSnapshot is { } snapshot &&
+                _session is not null &&
+                Keyboard.Modifiers == ModifierKeys.None &&
+                // Full-screen apps own the screen: arrows there move their own
+                // caret or scroll them instead of editing the shell prompt.
+                !snapshot.Modes.AlternateScreen &&
+                TryGetMouseCell(e, out var cx, out var cy))
             {
-                if (TryGetMouseCell(e, out var cx, out var cy))
-                {
-                    int cols = GetColumns();
-                    // cy is 1-based viewport-relative row, so cy - 1 is the 0-based viewport row.
-                    // snapshot.CursorRow is the absolute row (including scrollback).
-                    int absoluteClickRow = (cy - 1) + snapshot.ScrollbackCount;
-                    
-                    int clickIndex = absoluteClickRow * cols + (cx - 1);
-                    int cursorIndex = snapshot.CursorRow * cols + snapshot.CursorColumn;
-                    int diff = clickIndex - cursorIndex;
-                    
-                    if (Math.Abs(diff) < 2000)
-                    {
-                        var app = snapshot.Modes.ApplicationCursorKeys;
-                        var left = app ? "\x1bOD" : "\x1b[D";
-                        var right = app ? "\x1bOC" : "\x1b[C";
-                        
-                        if (diff < 0)
-                            for (int i = 0; i < -diff; i++) _session.Write(left);
-                        else if (diff > 0)
-                            for (int i = 0; i < diff; i++) _session.Write(right);
-                    }
-                }
+                MovePromptCursorToCell(snapshot, cx, cy);
             }
             return;
         }
@@ -612,6 +629,34 @@ public partial class MainWindow : Window
 
     private bool TryGetMouseCell(MouseEventArgs e, out int x, out int y) =>
         TerminalTextBox.TryGetGridCell(e, out x, out y);
+
+    /// <summary>
+    /// Clicking on the prompt walks the shell cursor to the clicked cell with
+    /// arrow keys. Every key goes out in a single write: thousands of separate
+    /// flushed 8-byte writes used to freeze the UI for seconds.
+    /// </summary>
+    private void MovePromptCursorToCell(TerminalSnapshot snapshot, int column, int row)
+    {
+        if (_session is null)
+            return;
+
+        var columns = GetColumns();
+        // row is 1-based and viewport relative; snapshot.CursorRow is absolute.
+        var clickIndex = ((row - 1) + snapshot.ScrollbackCount) * columns + (column - 1);
+        var cursorIndex = snapshot.CursorRow * columns + snapshot.CursorColumn;
+        var difference = clickIndex - cursorIndex;
+
+        if (difference == 0 || Math.Abs(difference) >= 2000)
+            return;
+
+        var applicationCursorKeys = snapshot.Modes.ApplicationCursorKeys;
+        var sequence = difference < 0
+            ? applicationCursorKeys ? "\x1bOD" : "\x1b[D"
+            : applicationCursorKeys ? "\x1bOC" : "\x1b[C";
+
+        _session.Write(string.Concat(
+            Enumerable.Repeat(sequence, Math.Abs(difference))));
+    }
 
     private bool IsSgrMouseTrackingEnabled() =>
         !TerminalTextBox.IsSelecting &&
@@ -1055,6 +1100,10 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         LoadTabState(tab);
         RebuildTabStrip();
 
+        // The tab was hidden while the window may have been resized; its PTY is
+        // still on the old grid until we resize it here.
+        ApplyViewportResize();
+
         if (_pendingSnapshot is not null)
             QueueRender(_pendingSnapshot);
         else if (_lastRenderedSnapshot is not null &&
@@ -1107,6 +1156,7 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         {
             _activeTab = _tabs[Math.Min(index, _tabs.Count - 1)];
             LoadTabState(_activeTab);
+            ApplyViewportResize();
         }
 
         RebuildTabStrip();
@@ -1598,8 +1648,10 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         if (_session is null || string.IsNullOrEmpty(text))
             return;
 
+        // Inside a bracketed paste the payload must stay verbatim: translating
+        // '?' into key records would paste escape sequences as text.
         if (_lastRenderedSnapshot?.Modes.BracketedPaste == true)
-            _session.Write($"\x1b[200~{text}\x1b[201~");
+            _session.Write($"\x1b[200~{text}\x1b[201~", translateQuestionMark: false);
         else
             _session.Write(text);
     }
@@ -1702,7 +1754,18 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
 
             var output = new string(characters, 0, characterCount);
 
-            var snapshot = buffer.Process(output);
+            TerminalSnapshot snapshot;
+            try
+            {
+                snapshot = buffer.Process(output);
+            }
+            catch (Exception exception)
+            {
+                // A parser bug must not silently kill the read loop (that used
+                // to leave the tab frozen with no output and no echo).
+                InputDebug.Log($"OUTPUT PARSE FAILED: {exception.GetType().Name}: {exception.Message}");
+                continue;
+            }
 
             foreach (var response in snapshot.Responses)
                 session.Write(response);
@@ -1711,6 +1774,28 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
                 SuspendRendering(tab, snapshot.Revision);
             else
                 QueueRender(tab, snapshot);
+        }
+
+        if (!cancellationToken.IsCancellationRequested)
+            NotifyProcessExited(tab);
+    }
+
+    private void NotifyProcessExited(TerminalTab tab)
+    {
+        var buffer = tab.Buffer;
+
+        if (buffer is null)
+            return;
+
+        try
+        {
+            var snapshot = buffer.Process(
+                "\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+            QueueRender(tab, snapshot);
+        }
+        catch (Exception exception)
+        {
+            InputDebug.Log($"EXIT NOTICE FAILED: {exception.Message}");
         }
     }
 

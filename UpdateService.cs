@@ -17,7 +17,7 @@ public sealed record UpdateCheckResult(
 public static class UpdateService
 {
     private const string LatestReleaseApi =
-        "https://api.github.com/repos/hadigorge/RtlTerminal/releases/latest";
+        "https://api.github.com/repos/Hadixb1/RtlTerminal/releases/latest";
     private static readonly HttpClient Client = CreateClient();
 
     public static async Task<UpdateCheckResult> CheckAsync(
@@ -96,7 +96,7 @@ public static class UpdateService
                 "application/vnd.github+json"));
         client.DefaultRequestHeaders.Add(
             "X-GitHub-Api-Version",
-            "2026-03-10");
+            "2022-11-28");
         return client;
     }
 

@@ -15,7 +15,10 @@ var tests = new (string Name, Action Run)[]
     ("style changes preserve pending autowrap", StylePreservesWrap),
     ("status redraw clears old characters across reads", StatusRedraw),
     ("wide characters can be erased and overwritten", WideErase),
-    ("snapshot rows are reused without hiding edits", SnapshotReuse)
+    ("snapshot rows are reused without hiding edits", SnapshotReuse),
+    ("lone surrogates never crash the parser", LoneSurrogateSurvives),
+    ("shrinking the grid keeps the cursor row on screen", ShrinkKeepsCursorVisible),
+    ("soft-wrapped rows are marked as continuations", SoftWrapIsTracked)
 };
 
 var failures = new List<string>();
@@ -249,6 +252,60 @@ static void SnapshotReuse()
     Assert(Text(resized).StartsWith("new"), "resize reused stale cells");
     var restored = buffer.Process("\x1b[?1049l");
     Assert(!Text(restored).Contains("unchanged"), "alternate screen cache leaked into main screen");
+}
+
+static void LoneSurrogateSurvives()
+{
+    var buffer = new TerminalBuffer(20, 5);
+
+    // A half pair must never throw: the exception used to escape the read loop
+    // and leave the whole tab frozen with no output and no echo.
+    buffer.Process("\ud83d");            // high surrogate is held back ...
+    buffer.Process("\x1b[1m");           // ... and swallowed by an escape ...
+    var lone = buffer.Process("\ude00"); // ... leaving a lone low surrogate.
+    Assert(lone.Lines.Count > 0, "lone low surrogate produced no output");
+    Assert(Text(lone).Contains('\ufffd'), "lone surrogate was not replaced with U+FFFD");
+
+    var broken = new TerminalBuffer(20, 5);
+    var brokenSnapshot = broken.Process("\ud83d\x1b[1mX");
+    Assert(Text(brokenSnapshot).Contains('\ufffd'), "broken pair was not replaced");
+    Assert(Text(brokenSnapshot).Contains('X'), "text after the broken pair was lost");
+
+    // A complete pair still renders as one glyph.
+    var emoji = new TerminalBuffer(20, 5).Process("\ud83d\ude00");
+    Assert(Text(emoji).Contains("\ud83d\ude00"), "valid emoji pair was damaged");
+}
+
+static void ShrinkKeepsCursorVisible()
+{
+    var buffer = new TerminalBuffer(40, 12);
+    for (var line = 1; line <= 12; line++)
+        buffer.Process($"line{line:00}\r\n");
+    buffer.Process("PROMPT> ");
+
+    var shrunk = buffer.Resize(40, 6);
+
+    Assert(shrunk.CursorRow == shrunk.Lines.Count - 1,
+        $"cursor row {shrunk.CursorRow} is not on the last screen row of {shrunk.Lines.Count - 1}");
+    Assert(Text(shrunk).Contains("PROMPT>"), "the prompt was cut off by the resize");
+    Assert(Text(shrunk).Contains("line12"), "the bottom of the screen was not kept");
+    Assert(shrunk.ScrollbackCount > 0, "rows dropped by the shrink were not kept as history");
+}
+
+static void SoftWrapIsTracked()
+{
+    var buffer = new TerminalBuffer(10, 5);
+    var wrapped = buffer.Process("0123456789AB");
+
+    Assert(wrapped.Lines.Count > 1, "wrap did not create a second row");
+    Assert(!wrapped.Lines[0].WrappedFromPrevious, "first row must not be a continuation");
+    Assert(wrapped.Lines[1].WrappedFromPrevious, "continuation row was not flagged");
+
+    // The flag has to move with the row when the screen scrolls.
+    var scrolled = buffer.Process("\r\n\r\n\r\n\r\n");
+    Assert(scrolled.ScrollbackCount > 0, "no history was produced");
+    Assert(!scrolled.Lines[0].WrappedFromPrevious, "history row lost its wrap state");
+    Assert(scrolled.Lines[1].WrappedFromPrevious, "continuation row lost its wrap state after scrolling");
 }
 
 static string Text(TerminalSnapshot snapshot) => string.Join(

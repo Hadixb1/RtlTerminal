@@ -247,7 +247,14 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     private static readonly bool SupportsWin32InputMode =
         Environment.OSVersion.Version.Build >= 22000;
 
-    public void Write(string text)
+    /// <summary>
+    /// Writes keyboard input to the child.
+    /// <paramref name="translateQuestionMark"/> rewrites ASCII '?' and Persian '؟'
+    /// into win32-input-mode key records (Windows 11 only). Callers that are
+    /// replaying a paste must pass false: inside a bracketed paste those escape
+    /// sequences would become part of the pasted text.
+    /// </summary>
+    public void Write(string text, bool translateQuestionMark = true)
     {
         if (_inputWriter is null)
         {
@@ -255,22 +262,17 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             return;
         }
 
-        // Lone ASCII '?' or Persian '؟' through the ConPTY pipe:
+        // ASCII '?' and Persian '؟' through the ConPTY pipe:
         // On Windows 11 (Build >= 22000), ConPTY natively supports the standard win32-input-mode escape
         // sequence (\x1b[Vk;Sc;Uc;Kd;Cs;Rc_) which delivers true KEY-DOWN records directly to the child's
         // console input buffer (fixing prompt_toolkit/Hermes question mark drops).
         // On Windows 10, ConPTY does NOT support win32-input-mode; sending \x1b[..._ there causes
         // conhost to drop the sequence, so on Windows 10 we pass standard UTF-8 characters through.
-        if (SupportsWin32InputMode)
+        if (translateQuestionMark &&
+            SupportsWin32InputMode &&
+            text.AsSpan().IndexOfAny('?', '\u061f') >= 0)
         {
-            if (text == "?")
-            {
-                text = "\x1b[191;53;63;1;16;1_\x1b[191;53;63;0;16;1_";
-            }
-            else if (text is "؟" or "\u061f")
-            {
-                text = "\x1b[191;53;1567;1;16;1_\x1b[191;53;1567;0;16;1_";
-            }
+            text = TranslateQuestionMarks(text);
         }
 
         var bytes = Encoding.UTF8.GetBytes(text);
@@ -309,34 +311,27 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
 
 
-    // ---- Synthetic key-event input (Shift+/ = U+061F) --------------------------------
-    // conhost turns raw UTF-8 bytes written to the ConPTY pipe into KEY_EVENT records.
-    // For characters that do not map onto the layout conhost uses (U+061F among them) it
-    // puts the character on the KEY-UP record, while clients that read only KEY-DOWN
-    // (prompt_toolkit -> Hermes / any Python TUI) silently drop it: typing "Shift+/"
-    // produced nothing. Writing the record ourselves guarantees KEY-DOWN carries it.
-    private const uint GENERIC_READ_WRITE = 0xC0000000;
-    private const uint FILE_SHARE_RW = 0x00000003;
-    private const uint OPEN_EXISTING_FILE = 3;
-    private const uint KEY_EVENT_TYPE = 1;
-    private const uint SHIFT_PRESSED = 0x0010;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KEY_EVENT_RECORD_NATIVE
+    private static string TranslateQuestionMarks(string text)
     {
-        public int bKeyDown;
-        public ushort wRepeatCount;
-        public ushort wVirtualKeyCode;
-        public ushort wVirtualScanCode;
-        public char uChar;
-        public uint dwControlKeyState;
-    }
+        const string ascii =
+            "\x1b[191;53;63;1;16;1_\x1b[191;53;63;0;16;1_";
+        const string persian =
+            "\x1b[191;53;1567;1;16;1_\x1b[191;53;1567;0;16;1_";
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct INPUT_RECORD_NATIVE
-    {
-        public ushort EventType;
-        public KEY_EVENT_RECORD_NATIVE KeyEvent;
+        var builder = new StringBuilder(text.Length + 32);
+        foreach (var character in text)
+        {
+            // Every occurrence is rewritten, not just a lone keystroke, so
+            // pasting text that contains '?' keeps working in prompt_toolkit.
+            if (character == '?')
+                builder.Append(ascii);
+            else if (character == '\u061f')
+                builder.Append(persian);
+            else
+                builder.Append(character);
+        }
+
+        return builder.ToString();
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -345,27 +340,11 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool FreeConsole();
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr CreateFileW(string lpFileName, uint dwDesiredAccess, uint dwShareMode,
-        IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool WriteConsoleInputW(IntPtr hConsoleInput, INPUT_RECORD_NATIVE[] lpBuffer,
-        uint nLength, out uint lpNumberOfEventsWritten);
-
-    [DllImport("user32.dll")]
-    private static extern short VkKeyScanExW(char ch, IntPtr hkl);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetKeyboardLayout(uint idThread);
-
     /// <summary>
-    /// Attach this process to the child's console so WriteConsoleInputW targets it.
-    /// AttachConsole is per-process; Rtl Terminal is a GUI process whose statically
-    /// linked conhost never owns a console, so this succeeds on this path (measured).
-    /// Deliberately does NOT touch the console code page: the child runs with CP 437
-    /// and still receives injected KEY_EVENT records as UTF-16 (measured: a KEY-DOWN
-    /// carrying U+061F arrives at the child as U+061F under CP 437).
+    /// Attach this process to the child's console so console code page calls
+    /// target it. AttachConsole is per-process; Rtl Terminal is a GUI process
+    /// whose statically linked conhost never owns a console, so this succeeds on
+    /// this path (measured).
     /// </summary>
     private bool EnterChildConsole()
     {
@@ -375,36 +354,6 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
         InputDebug.Log($"EnterChildConsole AttachConsole failed gle={Marshal.GetLastWin32Error()}");
         return false;
-    }
-
-    private const uint MAPVK_VK_TO_VSC = 0;
-
-    [DllImport("user32.dll")]
-    private static extern uint MapVirtualKeyEx(uint uCode, uint uType, IntPtr dwhkl);
-
-    public bool WriteKeyChar(char character, bool shiftPressed)
-    {
-        return WriteKeyChar(character, shiftPressed, IntPtr.Zero);
-    }
-
-    /// <summary>
-    /// Writes a key character using the ConPTY standard win32-input-mode sequence.
-    /// Delivers true KEY-DOWN and KEY-UP records directly to the console input buffer.
-    /// </summary>
-    public bool WriteKeyChar(char character, bool shiftPressed, IntPtr layout)
-    {
-        if (SupportsWin32InputMode)
-        {
-            ushort vk = (character == '?' || character == '\u061f') ? (ushort)0xBF : (ushort)character;
-            ushort sc = (vk == 0xBF) ? (ushort)0x35 : (ushort)0;
-            uint cs = shiftPressed ? 0x10u : 0u;
-            var seq = $"\x1b[{vk};{sc};{(int)character};1;{cs};1_\x1b[{vk};{sc};{(int)character};0;{cs};1_";
-            Write(seq);
-            return true;
-        }
-
-        Write(character.ToString());
-        return true;
     }
 
     public void Resize(short columns, short rows)

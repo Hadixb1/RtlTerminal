@@ -35,6 +35,9 @@ public sealed record TerminalLine(
 {
     internal bool ContainsRightToLeft { get; } =
         SmartRtl.ContainsRightToLeft(Runs);
+
+    /// <summary>True when this row continues the previous row (soft wrap).</summary>
+    public bool WrappedFromPrevious { get; init; }
 }
 
 public sealed record TerminalSnapshot(
@@ -157,23 +160,37 @@ public sealed class TerminalBuffer
             if (columns == _columns && rows == _rows)
                 return CreateSnapshot();
 
-            var resized = ResizeCells(_cells, columns, rows);
+            // Shrinking must keep the cursor (and therefore the prompt) on
+            // screen: drop the top rows into history instead of cutting the
+            // bottom of the screen away.
+            var lostRows = Math.Max(0, _rows - rows);
+
+            if (lostRows > 0 && !_alternateScreenActive)
+            {
+                for (var row = 0; row < lostRows; row++)
+                    AddScrollbackRow(row);
+            }
+
+            var resized = ResizeCells(_cells, columns, rows, lostRows);
             var resizedWrapState = ResizeWrapState(
                 _wrappedFromPrevious,
-                rows);
+                rows,
+                lostRows);
 
             _cells = resized;
             _wrappedFromPrevious = resizedWrapState;
 
             if (_savedMainScreen is { } saved)
             {
+                var savedLostRows = Math.Max(0, saved.Cells.GetLength(0) - rows);
                 _savedMainScreen = saved with
                 {
-                    Cells = ResizeCells(saved.Cells, columns, rows),
+                    Cells = ResizeCells(saved.Cells, columns, rows, savedLostRows),
                     WrappedFromPrevious = ResizeWrapState(
                         saved.WrappedFromPrevious,
-                        rows),
-                    CursorRow = Math.Clamp(saved.CursorRow, 0, rows - 1),
+                        rows,
+                        savedLostRows),
+                    CursorRow = Math.Clamp(saved.CursorRow - savedLostRows, 0, rows - 1),
                     CursorColumn = Math.Clamp(saved.CursorColumn, 0, columns - 1),
                     ScrollTop = 0,
                     ScrollBottom = rows - 1
@@ -184,7 +201,7 @@ public sealed class TerminalBuffer
             _rows = rows;
             _scrollTop = 0;
             _scrollBottom = rows - 1;
-            _cursorRow = Math.Clamp(_cursorRow, 0, rows - 1);
+            _cursorRow = Math.Clamp(_cursorRow - lostRows, 0, rows - 1);
             _cursorColumn = Math.Clamp(_cursorColumn, 0, columns - 1);
             _wrapPending = false;
             return CreateSnapshot();
@@ -209,7 +226,9 @@ public sealed class TerminalBuffer
                 return;
             }
 
-            WriteTextElement(highSurrogate.ToString());
+            // The pair was broken: show the replacement character instead of
+            // handing a lone high surrogate to the parser.
+            WriteTextElement("\ufffd");
         }
 
         switch (_state)
@@ -694,7 +713,14 @@ public sealed class TerminalBuffer
 
     private void WriteTextElement(string text)
     {
-        var rune = Rune.GetRuneAt(text, 0);
+        // A lone UTF-16 surrogate (a half pair can be left over when an escape
+        // sequence consumes the other half, or when a caller feeds broken text)
+        // must never take the session down: Rune.GetRuneAt throws on it.
+        if (!Rune.TryGetRuneAt(text, 0, out var rune))
+        {
+            text = "\ufffd";
+            rune = Rune.GetRuneAt(text, 0);
+        }
 
         if (_joinNextCharacter)
         {
@@ -1374,26 +1400,31 @@ public sealed class TerminalBuffer
         }
     }
 
-    private static Cell[,] ResizeCells(Cell[,] source, int columns, int rows)
+    private static Cell[,] ResizeCells(
+        Cell[,] source,
+        int columns,
+        int rows,
+        int sourceRowOffset)
     {
         var resized = new Cell[rows, columns];
         Fill(resized);
-        var copiedRows = Math.Min(rows, source.GetLength(0));
+        var copiedRows = Math.Min(rows, Math.Max(0, source.GetLength(0) - sourceRowOffset));
         var copiedColumns = Math.Min(columns, source.GetLength(1));
 
         for (var row = 0; row < copiedRows; row++)
         {
             for (var column = 0; column < copiedColumns; column++)
-                resized[row, column] = source[row, column];
+                resized[row, column] = source[sourceRowOffset + row, column];
         }
 
         return resized;
     }
 
-    private static bool[] ResizeWrapState(bool[] source, int rows)
+    private static bool[] ResizeWrapState(bool[] source, int rows, int sourceRowOffset)
     {
         var resized = new bool[rows];
-        Array.Copy(source, resized, Math.Min(source.Length, rows));
+        var copiedRows = Math.Min(rows, Math.Max(0, source.Length - sourceRowOffset));
+        Array.Copy(source, sourceRowOffset, resized, 0, copiedRows);
         return resized;
     }
 
@@ -1430,13 +1461,16 @@ public sealed class TerminalBuffer
             if (row == _cursorRow)
                 cellLength = Math.Max(cellLength, _cursorColumn + 1);
 
+            var wrappedFromPrevious = _wrappedFromPrevious[row];
             var cached = _snapshotLines[row];
-            var unchanged = cached is not null && cached.CellLength == cellLength;
+            var unchanged = cached is not null &&
+                cached.CellLength == cellLength &&
+                cached.WrappedFromPrevious == wrappedFromPrevious;
             for (var column = 0; unchanged && column < cellLength; column++)
                 unchanged = _snapshotCells[row, column] == _cells[row, column];
             if (!unchanged)
             {
-                cached = CreateLine(_cells, row, cellLength);
+                cached = CreateLine(_cells, row, cellLength, wrappedFromPrevious);
                 _snapshotLines[row] = cached;
                 for (var column = 0; column < cellLength; column++)
                     _snapshotCells[row, column] = _cells[row, column];
@@ -1467,22 +1501,29 @@ public sealed class TerminalBuffer
             ++_revision);
     }
 
-    private TerminalLine CreateLine(Cell[] cells, int cellLength)
+    private TerminalLine CreateLine(Cell[] cells, int cellLength, bool wrapped)
     {
         var lastCharacter = FindLastCharacter(cells);
         return new TerminalLine(
             CreateRuns(cells, Math.Min(cellLength, lastCharacter + 1)),
-            cellLength);
+            cellLength)
+        {
+            WrappedFromPrevious = wrapped
+        };
     }
 
     private TerminalLine CreateLine(
         Cell[,] cells,
         int row,
-        int cellLength)
+        int cellLength,
+        bool wrapped)
     {
         return new TerminalLine(
             CreateRuns(cells, row, cellLength),
-            cellLength);
+            cellLength)
+        {
+            WrappedFromPrevious = wrapped
+        };
     }
 
     private static IReadOnlyList<TerminalRun> CreateRuns(
@@ -1585,7 +1626,7 @@ public sealed class TerminalBuffer
         for (var column = 0; column < _columns; column++)
             copy[column] = _cells[row, column];
 
-        _scrollback.Add(CreateLine(copy, copy.Length));
+        _scrollback.Add(CreateLine(copy, copy.Length, _wrappedFromPrevious[row]));
 
         if (_scrollback.Count > _maximumScrollbackRows + 128)
             TrimScrollback();

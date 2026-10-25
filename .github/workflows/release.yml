@@ -30,6 +30,9 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=v$version" >> $env:GITHUB_OUTPUT
 
+      - name: Run buffer tests
+        run: dotnet run --project tests/RtlTerminal.BufferTests/RtlTerminal.BufferTests.csproj --configuration Release
+
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 

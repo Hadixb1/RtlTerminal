@@ -19,11 +19,11 @@
 
   **Latest Windows 10/11 installer — no separate .NET installation required**
 
-  ### [⬇️ دریافت آخرین نسخهٔ منتشرشده](https://github.com/hadigorge/RtlTerminal/releases/latest)
+  ### [⬇️ دریافت آخرین نسخهٔ منتشرشده](https://github.com/Hadixb1/RtlTerminal/releases/latest)
 
-  ### [⬇️ Get the latest published release](https://github.com/hadigorge/RtlTerminal/releases/latest)
+  ### [⬇️ Get the latest published release](https://github.com/Hadixb1/RtlTerminal/releases/latest)
 
-  [مشاهده همه نسخه‌ها · View all releases](https://github.com/hadigorge/RtlTerminal/releases)
+  [مشاهده همه نسخه‌ها · View all releases](https://github.com/Hadixb1/RtlTerminal/releases)
 
   <br>
 
@@ -42,7 +42,7 @@
 
 **Rtl Terminal** is an open-source Windows terminal emulator maintained by **Hadi** for Persian, Arabic and other right-to-left language users. It provides a switchable RTL terminal view while preserving ANSI colors, interactive command-line applications, progress bars, links, Unicode text and standard terminal keyboard input.
 
-Rtl Terminal uses the Windows ConPTY API and works with command-line environments such as Command Prompt, PowerShell, WSL, Bash, developer tools, package managers and interactive terminal applications.
+Rtl Terminal uses the Windows ConPTY API and runs Command Prompt and PowerShell sessions, along with the developer tools, package managers and interactive terminal applications you start inside them.
 
 ### Features
 
@@ -53,7 +53,7 @@ Rtl Terminal uses the Windows ConPTY API and works with command-line environment
 - Display Persian, Arabic, English and mixed Unicode terminal output.
 - Support ANSI standard colors, bright colors, dim text, 256 colors and RGB colors.
 - Run interactive CLI and TUI applications through Windows ConPTY.
-- Open multiple Command Prompt, PowerShell and WSL sessions in independent tabs.
+- Open multiple Command Prompt and PowerShell sessions in independent tabs.
 - Switch tabs with `Ctrl+Tab`, create a tab with `Ctrl+Shift+T` and close it with `Ctrl+W`.
 - Render animated progress bars and in-place terminal line updates.
 - Keep long-running AI agent output responsive with incremental scrollback rendering.
@@ -64,14 +64,14 @@ Rtl Terminal uses the Windows ConPTY API and works with command-line environment
 - Automatically swap Left and Right arrow keys when typing with a Persian keyboard layout.
 - Colorized header prompts (Red) to distinguish between prompt and user input (Green).
 - Paste text, copied file paths and clipboard images with `Ctrl+V`, `Ctrl+Shift+V` or right-click.
-- Clipboard paths retain their Windows form; convert paths manually when needed in WSL.
+- Clipboard paths are pasted in their Windows form.
 - Send `Ctrl+C` as an interrupt when no text is selected.
 - Select any installed Windows font, font size, weight and italic style.
 - Render ANSI bold and italic styles produced by terminal applications.
 - Show recommended terminal and programming fonts when installed.
 - Optionally add **Open in RtlTerminal** to the Windows folder context menu.
 - Open a terminal directly in the selected folder.
-- Remember whether new tabs should use Command Prompt, PowerShell or WSL.
+- Remember whether new tabs should use Command Prompt or PowerShell.
 - Reopen one of the ten most recent Command Prompt directories from the File menu.
 - Export the retained content of the current terminal session to a UTF-8 text file.
 - Provide a built-in guide in English, Persian and Arabic.
@@ -129,7 +129,7 @@ Requirements:
 Clone your published repository, then build it:
 
 ```powershell
-git clone https://github.com/hadigorge/RtlTerminal.git
+git clone https://github.com/Hadixb1/RtlTerminal.git
 cd RtlTerminal
 dotnet build RtlTerminal.csproj
 ```
@@ -289,7 +289,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 
 **Rtl Terminal** یک شبیه‌ساز ترمینال متن‌باز برای ویندوز است که توسط **Hadi** برای کاربران فارسی‌زبان، عربی‌زبان و زبان‌های راست‌به‌چپ ساخته شده است. این برنامه با Smart RTL جهت متن فارسی و ترکیبی را خودکار مدیریت می‌کند و شبکهٔ برنامه‌های تمام‌صفحه را حفظ می‌کند و در کنار آن از رنگ‌های ANSI، برنامه‌های تعاملی خط فرمان، نوارهای پیشرفت، لینک‌ها و متن Unicode پشتیبانی می‌کند.
 
-این برنامه با استفاده از Windows ConPTY می‌تواند محیط‌هایی مانند Command Prompt، PowerShell، WSL، Bash، ابزارهای توسعه، package managerها و برنامه‌های تعاملی ترمینال را اجرا کند.
+این برنامه با استفاده از Windows ConPTY می‌تواند Command Prompt و PowerShell و همچنین ابزارهای توسعه، package managerها و برنامه‌های تعاملی ترمینال را اجرا کند.
 
 ### امکانات
 
@@ -297,7 +297,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 - نمایش متن فارسی، عربی، انگلیسی و متن‌های ترکیبی
 - پشتیبانی از رنگ‌های ANSI، رنگ‌های روشن، متن کم‌رنگ، ۲۵۶ رنگ و RGB
 - اجرای برنامه‌های CLI و TUI تعاملی
-- اجرای هم‌زمان Command Prompt، PowerShell و WSL در تب‌های مستقل
+- اجرای هم‌زمان Command Prompt و PowerShell در تب‌های مستقل
 - ساخت، جابه‌جایی و بستن تب‌ها با میان‌برهای صفحه‌کلید
 - پشتیبانی از progress bar و بازنویسی خروجی روی همان خط
 - رندر بهینه برای خروجی‌های طولانی agent‌های هوش مصنوعی
@@ -308,7 +308,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 - جابه‌جایی خودکار عملکرد کلیدهای جهت‌نمای چپ و راست در زمان فعال‌بودن کیبورد فارسی
 - رنگ‌بندی مجزای خط فرمان (قرمز) و متن تایپ‌شده (سبز)
 - Paste متن، مسیر فایل‌های کپی‌شده و تصویر Clipboard با `Ctrl+V`، `Ctrl+Shift+V` یا راست‌کلیک
-- حفظ مسیرهای ویندوز هنگام Paste؛ در WSL تبدیل مسیر در صورت نیاز دستی است
+- حفظ شکل ویندوزی مسیرها هنگام Paste
 - ارسال Interrupt با `Ctrl+C` در صورتی که متنی انتخاب نشده باشد
 - انتخاب همه فونت‌های نصب‌شده ویندوز
 - تنظیم اندازه، ضخامت و حالت ایتالیک فونت
@@ -316,7 +316,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 - نمایش فونت‌های استاندارد ترمینال و برنامه‌نویسی در صورت نصب‌بودن
 - افزودن اختیاری گزینه **Open in RtlTerminal** به منوی راست‌کلیک پوشه‌ها
 - بازکردن ترمینال مستقیماً در مسیر پوشه انتخاب‌شده
-- به‌خاطرسپردن CMD، پاورشل یا WSL به‌عنوان محیط پیش‌فرض تب جدید
+- به‌خاطرسپردن CMD یا PowerShell به‌عنوان محیط پیش‌فرض تب جدید
 - دسترسی به ده مسیر اخیر CMD از منوی File
 - خروجی‌گرفتن از محتوای جلسهٔ جاری در فایل متنی UTF-8
 - راهنمای داخلی به زبان‌های فارسی، عربی و انگلیسی
@@ -342,7 +342,7 @@ No license file is currently included. Add a `LICENSE` file before accepting ext
 ابتدا .NET 8 SDK را نصب کنید، سپس:
 
 ```powershell
-git clone https://github.com/hadigorge/RtlTerminal.git
+git clone https://github.com/Hadixb1/RtlTerminal.git
 cd RtlTerminal
 dotnet build RtlTerminal.csproj
 ```
@@ -417,7 +417,7 @@ git push origin main
 
 **Rtl Terminal** هو محاكي طرفية مفتوح المصدر لنظام Windows، طوّره **Hadi** لمستخدمي اللغة العربية والفارسية واللغات التي تُكتب من اليمين إلى اليسار. يدير البرنامج اتجاه النص العربي والفارسي والمختلط باستخدام Smart RTL مع الحفاظ على شبكة التطبيقات بملء الشاشة مع دعم ألوان ANSI والنصوص Unicode والروابط وأشرطة التقدم وتطبيقات سطر الأوامر التفاعلية.
 
-يعتمد البرنامج على Windows ConPTY، ويمكنه تشغيل Command Prompt وPowerShell وWSL وBash وأدوات المطورين ومديري الحزم وتطبيقات CLI وTUI.
+يعتمد البرنامج على Windows ConPTY، ويمكنه تشغيل Command Prompt وPowerShell وأدوات المطورين ومديري الحزم وتطبيقات CLI وTUI.
 
 ### المميزات
 
@@ -425,7 +425,7 @@ git push origin main
 - عرض النصوص العربية والفارسية والإنجليزية والنصوص المختلطة
 - دعم ألوان ANSI والألوان الساطعة والنص الخافت و256 لوناً وألوان RGB
 - تشغيل تطبيقات CLI وTUI التفاعلية
-- تشغيل Command Prompt وPowerShell وWSL في علامات تبويب مستقلة
+- تشغيل Command Prompt وPowerShell في علامات تبويب مستقلة
 - إنشاء علامات التبويب والتنقل بينها وإغلاقها باختصارات لوحة المفاتيح
 - دعم أشرطة التقدم وتحديث السطر نفسه
 - تصيير تدريجي سريع لمخرجات وكلاء الذكاء الاصطناعي الطويلة
@@ -433,7 +433,7 @@ git push origin main
 - اكتشاف الروابط وفتحها باستخدام `Ctrl + Click`
 - نسخ النص باستخدام `Ctrl+C` أو `Ctrl+Shift+C`
 - لصق النص ومسارات الملفات المنسوخة وصور Clipboard باستخدام `Ctrl+V` أو `Ctrl+Shift+V` أو زر الفأرة الأيمن
-- تبقى المسارات الملصقة بصيغة Windows؛ حوّلها يدوياً عند الحاجة في WSL
+- تبقى المسارات الملصقة بصيغة Windows
 - إرسال أمر المقاطعة عند الضغط على `Ctrl+C` دون تحديد نص
 - اختيار جميع الخطوط المثبتة في Windows
 - تخصيص حجم الخط ووزنه ونمطه المائل
@@ -441,7 +441,7 @@ git push origin main
 - عرض خطوط الطرفية والبرمجة المقترحة عند توفرها
 - إضافة خيار **Open in RtlTerminal** إلى قائمة المجلدات
 - فتح الطرفية مباشرة داخل المجلد المحدد
-- تذكّر CMD أو PowerShell أو WSL كبيئة افتراضية لعلامات التبويب الجديدة
+- تذكّر CMD أو PowerShell كبيئة افتراضية لعلامات التبويب الجديدة
 - فتح أحد آخر عشرة مجلدات CMD من قائمة File
 - تصدير محتوى الجلسة الحالية إلى ملف نصي UTF-8
 - دليل مدمج باللغات العربية والفارسية والإنجليزية
@@ -467,7 +467,7 @@ git push origin main
 ثبّت .NET 8 SDK ثم نفّذ:
 
 ```powershell
-git clone https://github.com/hadigorge/RtlTerminal.git
+git clone https://github.com/Hadixb1/RtlTerminal.git
 cd RtlTerminal
 dotnet build RtlTerminal.csproj
 ```
