@@ -121,6 +121,7 @@ public sealed class TerminalView : ContentControl
         _rowRtl = rowRtl;
         _cellWidth = cellWidth;
         _lineHeight = lineHeight;
+        UpdatePointerCursor();
         _surface.Height = Math.Max(lineHeight, snapshot.Lines.Count * lineHeight);
         if (!sameFrame) _surface.InvalidateVisual();
         if (followOutput) _scroll.ScrollToEnd();
@@ -133,7 +134,20 @@ public sealed class TerminalView : ContentControl
         _layouts.Clear();
         _surface.Height = _lineHeight;
         ClearSelection();
+        UpdatePointerCursor();
         _surface.InvalidateVisual();
+    }
+
+    /// <summary>
+    /// The I-beam belongs to text selection. As soon as a program asks for mouse
+    /// reports it owns the pointer: every click goes to its own widgets, so the
+    /// user needs the normal arrow back (conhost and Windows Terminal do the
+    /// same). Shift still falls through to local selection.
+    /// </summary>
+    private void UpdatePointerCursor()
+    {
+        var tracking = _snapshot?.Modes is { MouseTrackingMode: > 0, SgrMouse: true };
+        SetCurrentValue(CursorProperty, tracking ? Cursors.Arrow : Cursors.IBeam);
     }
 
     public void ScrollToVerticalOffset(double offset) => _scroll.ScrollToVerticalOffset(offset);
@@ -370,65 +384,215 @@ public sealed class TerminalView : ContentControl
              cached.Source.CellLength == line.CellLength && cached.Source.Runs.SequenceEqual(line.Runs)))
             return cached;
         var text = Text(line);
-        var rightAlign = _rowRtl || SmartRtl.ShouldRightAlign(line, _smartRtl, _snapshot.Modes.AlternateScreen);
+        var alternateScreen = _snapshot.Modes.AlternateScreen;
+        var rightAlign = _rowRtl || SmartRtl.ShouldRightAlign(line, _smartRtl, alternateScreen);
         // Paragraph direction is independent of screen-grid alignment. Shaping
         // Arabic/Persian spans remains active even when Smart RTL is disabled.
         var baseRtl = _rowRtl || (_smartRtl && line.ContainsRightToLeft);
-        var spans = line.ContainsRightToLeft
-            ? SmartRtl.GetDirectionalSpans(text, baseRtl)
-            : text.Length == 0 ? [] : new[] { new DirectionalSpan(0, text.Length, false) };
         var cells = new List<DrawCell>();
         var glyphs = new List<DrawGlyph>();
-        var widths = new List<(int Start, int Length, int Width)>();
+        var elements = new List<(int Start, int Length, int Width)>();
         var enumerator = StringInfo.GetTextElementEnumerator(text);
         while (enumerator.MoveNext())
         {
             var element = enumerator.GetTextElement();
-            widths.Add((enumerator.ElementIndex, element.Length,
+            elements.Add((enumerator.ElementIndex, element.Length,
                 element.EnumerateRunes().Max(TerminalBuffer.GetCellWidth)));
         }
-        var totalWidth = widths.Sum(item => item.Width) * _cellWidth;
-        var x = rightAlign ? Math.Max(0, _scroll.ViewportWidth - totalWidth) : 0;
-        var orderedSpans = baseRtl ? spans.Reverse() : spans;
-        foreach (var span in orderedSpans)
-        {
-            var members = widths.Where(item => item.Start >= span.Start && item.Start < span.Start + span.Length).ToArray();
-            var spanWidth = members.Sum(item => item.Width) * _cellWidth;
-            var advance = 0.0;
-            foreach (var member in members)
-            {
-                var width = member.Width * _cellWidth;
-                var cellX = x + (span.IsRightToLeft ? spanWidth - advance - width : advance);
-                var style = StyleAt(line, member.Start);
-                cells.Add(new DrawCell(member.Start, member.Length, cellX, width, span.IsRightToLeft, style));
-                advance += width;
-                // Latin and box-drawing glyphs are positioned at exact cell boundaries.
-                if (!span.IsRightToLeft && width > 0)
-                    glyphs.Add(new DrawGlyph(text.Substring(member.Start, member.Length), cellX, width, false, member.Start, style));
-            }
-            // Keep word separators at terminal-cell width. Shaping an entire padded
-            // row scales its spaces along with proportional Arabic fallback glyphs.
-            // Words still span ANSI style boundaries, preserving Arabic joining.
-            if (span.IsRightToLeft && members.Length > 0)
-            {
-                for (var i = 0; i < members.Length;)
-                {
-                    var start = i++;
-                    var whitespace = char.IsWhiteSpace(text[members[start].Start]);
-                    while (i < members.Length && char.IsWhiteSpace(text[members[i].Start]) == whitespace) i++;
-                    var firstOffset = members[start].Start;
-                    var endOffset = members[i - 1].Start + members[i - 1].Length;
-                    var segment = cells.Where(cell => cell.Start >= firstOffset && cell.Start < endOffset).ToArray();
-                    glyphs.Add(new DrawGlyph(text.Substring(firstOffset, endOffset - firstOffset),
-                        segment.Min(cell => cell.X), segment.Sum(cell => cell.Width), true,
-                        firstOffset, StyleAt(line, firstOffset)));
-                }
-            }
-            x += spanWidth;
-        }
+
+        if (alternateScreen && baseRtl && !_rowRtl)
+            LayoutScreenLine(line, text, elements, cells, glyphs);
+        else
+            LayoutFlowLine(line, text, elements, baseRtl, rightAlign, cells, glyphs);
+
+        // Logical order keeps selection, hit testing and the cursor walk stable
+        // no matter which visual direction produced the cells.
+        cells.Sort((left, right) => left.Start.CompareTo(right.Start));
+
         var result = new RowLayout(line, text, cells, glyphs);
         _layouts[row] = result;
         return result;
+    }
+
+    /// <summary>
+    /// Full-screen programs own the grid: every cell they draw has to stay where
+    /// they put it, borders and padding included. Mirroring the whole row moved
+    /// opencode's panel frame to the wrong side and pushed text fragments onto
+    /// the edges. Only the text between the frame and the padding is reordered,
+    /// so Persian reads right-to-left without disturbing the layout.
+    /// </summary>
+    private void LayoutScreenLine(
+        TerminalLine line,
+        string text,
+        List<(int Start, int Length, int Width)> elements,
+        List<DrawCell> cells,
+        List<DrawGlyph> glyphs)
+    {
+        var cellOffsets = new int[elements.Count];
+        for (var index = 1; index < elements.Count; index++)
+            cellOffsets[index] = cellOffsets[index - 1] + elements[index - 1].Width;
+
+        var first = -1;
+        var last = -1;
+        for (var index = 0; index < elements.Count; index++)
+        {
+            if (IsLayoutDecoration(text, elements[index])) continue;
+            if (first < 0) first = index;
+            last = index;
+        }
+
+        for (var index = 0; index < elements.Count; index++)
+        {
+            if (index >= first && index <= last) continue;
+            var element = elements[index];
+            EmitCell(line, text, element, cellOffsets[index] * _cellWidth, cells, glyphs);
+        }
+
+        if (first < 0) return;
+
+        var contentStartCell = cellOffsets[first];
+        var contentCells = cellOffsets[last] + elements[last].Width - contentStartCell;
+        var contentStart = elements[first].Start;
+        var contentEnd = elements[last].Start + elements[last].Length;
+
+        foreach (var span in SmartRtl.GetDirectionalSpans(
+            text.Substring(contentStart, contentEnd - contentStart), true))
+        {
+            var start = contentStart + span.Start;
+            var end = start + span.Length;
+            var startCell = cellOffsets[CellIndexAt(elements, start)];
+            var endCell = end >= text.Length
+                ? cellOffsets[last] + elements[last].Width
+                : cellOffsets[CellIndexAt(elements, end)];
+            var spanWidth = (endCell - startCell) * _cellWidth;
+            // Mirror inside the text box: an RTL paragraph starts at its right
+            // edge, so the first logical span ends up rightmost.
+            var mirroredCell = 2 * contentStartCell + contentCells - endCell;
+            EmitSpan(line, text,
+                elements.Where(item => item.Start >= start && item.Start < end).ToArray(),
+                span.IsRightToLeft, mirroredCell * _cellWidth, spanWidth, cells, glyphs);
+        }
+    }
+
+    /// <summary>Flow layout for normal shell output: spans fill the row in order.</summary>
+    private void LayoutFlowLine(
+        TerminalLine line,
+        string text,
+        List<(int Start, int Length, int Width)> elements,
+        bool baseRtl,
+        bool rightAlign,
+        List<DrawCell> cells,
+        List<DrawGlyph> glyphs)
+    {
+        var spans = line.ContainsRightToLeft
+            ? SmartRtl.GetDirectionalSpans(text, baseRtl)
+            : text.Length == 0 ? [] : new[] { new DirectionalSpan(0, text.Length, false) };
+        var totalWidth = elements.Sum(item => item.Width) * _cellWidth;
+        var x = rightAlign ? Math.Max(0, _scroll.ViewportWidth - totalWidth) : 0;
+        foreach (var span in baseRtl ? spans.Reverse() : spans)
+        {
+            var members = elements
+                .Where(item => item.Start >= span.Start && item.Start < span.Start + span.Length)
+                .ToArray();
+            var spanWidth = members.Sum(item => item.Width) * _cellWidth;
+            EmitSpan(line, text, members, span.IsRightToLeft, x, spanWidth, cells, glyphs);
+            x += spanWidth;
+        }
+    }
+
+    private void EmitSpan(
+        TerminalLine line,
+        string text,
+        (int Start, int Length, int Width)[] members,
+        bool rtl,
+        double x,
+        double spanWidth,
+        List<DrawCell> cells,
+        List<DrawGlyph> glyphs)
+    {
+        var advance = 0.0;
+        foreach (var member in members)
+            EmitCell(line, text, member,
+                x + (rtl ? spanWidth - advance - member.Width * _cellWidth : advance),
+                rtl, cells, glyphs, ref advance);
+
+        // Keep word separators at terminal-cell width. Shaping an entire padded
+        // row scales its spaces along with proportional Arabic fallback glyphs.
+        // Words still span ANSI style boundaries, preserving Arabic joining.
+        if (!rtl || members.Length == 0) return;
+        for (var i = 0; i < members.Length;)
+        {
+            var start = i++;
+            var whitespace = char.IsWhiteSpace(text[members[start].Start]);
+            while (i < members.Length && char.IsWhiteSpace(text[members[i].Start]) == whitespace) i++;
+            var firstOffset = members[start].Start;
+            var endOffset = members[i - 1].Start + members[i - 1].Length;
+            var segment = cells.Where(cell => cell.Start >= firstOffset && cell.Start < endOffset).ToArray();
+            if (segment.Length == 0) continue;
+            glyphs.Add(new DrawGlyph(text.Substring(firstOffset, endOffset - firstOffset),
+                segment.Min(cell => cell.X), segment.Sum(cell => cell.Width), true,
+                firstOffset, StyleAt(line, firstOffset)));
+        }
+    }
+
+    private void EmitCell(
+        TerminalLine line,
+        string text,
+        (int Start, int Length, int Width) element,
+        double x,
+        bool rtl,
+        List<DrawCell> cells,
+        List<DrawGlyph> glyphs,
+        ref double advance)
+    {
+        var width = element.Width * _cellWidth;
+        var style = StyleAt(line, element.Start);
+        cells.Add(new DrawCell(element.Start, element.Length, x, width, rtl, style));
+        advance += width;
+        // Shaped RTL runs are emitted per word below, so a cell must not also
+        // draw its own isolated letter.
+        if (!rtl && width > 0 && !char.IsWhiteSpace(text[element.Start]))
+            glyphs.Add(new DrawGlyph(text.Substring(element.Start, element.Length), x, width, false, element.Start, style));
+    }
+
+    private void EmitCell(
+        TerminalLine line,
+        string text,
+        (int Start, int Length, int Width) element,
+        double x,
+        List<DrawCell> cells,
+        List<DrawGlyph> glyphs)
+    {
+        var advance = 0.0;
+        EmitCell(line, text, element, x, false, cells, glyphs, ref advance);
+    }
+
+    /// <summary>
+    /// Panel frames, block art and padding belong to the program. Reordering
+    /// them tears the layout apart, so they keep their original cells.
+    /// </summary>
+    private static bool IsLayoutDecoration(
+        string text,
+        (int Start, int Length, int Width) element)
+    {
+        foreach (var rune in text.AsSpan(element.Start, element.Length).EnumerateRunes())
+        {
+            if (Rune.IsWhiteSpace(rune)) continue;
+            var value = rune.Value;
+            return value is >= 0x2500 and <= 0x259f // box drawing, block elements
+                or >= 0x2800 and <= 0x28ff;       // braille (progress bars)
+        }
+
+        return true;
+    }
+
+    private static int CellIndexAt(
+        List<(int Start, int Length, int Width)> elements,
+        int offset)
+    {
+        for (var index = elements.Count - 1; index > 0; index--)
+            if (elements[index].Start <= offset) return index;
+        return 0;
     }
 
     private static readonly Brush SelectionBrush = CreateFrozenBrush(Color.FromArgb(100, 70, 125, 200));

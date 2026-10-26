@@ -82,6 +82,8 @@ internal static class Program
         CheckWindowHeader();
         CheckLinksAndMenu();
         CheckRtlModes();
+        CheckTuiRtlFrame();
+        CheckPointerCursor();
         CheckGlyphReuse();
         CheckDialogRedraw();
         CheckCodexPersian();
@@ -226,11 +228,21 @@ internal static class Program
         if (!Items("Glyphs").Any(g => (bool)g.GetType().GetProperty("Rtl")!.GetValue(g)! && ((string)g.GetType().GetProperty("Text")!.GetValue(g)!).Contains("سلام")))
             throw new Exception("Smart RTL off must retain joined Persian glyph runs");
         Render(view, snapshot, "rtl-smart.png");
-        var positions = Items("Cells").Select(X).ToArray();
+        // Padding keeps its own cell in the alternate screen, so only the
+        // visible characters are compared: their relative order is what the
+        // TUI must not change.
+        const string rtlSample = "سلام English دنیا";
+        object[] Visible(IEnumerable<object> source) => source.Where(cell =>
+        {
+            var start = (int)cell.GetType().GetProperty("Start")!.GetValue(cell)!;
+            return start < rtlSample.Length && !char.IsWhiteSpace(rtlSample[start]);
+        }).ToArray();
+        var cells = Visible(Items("Cells"));
+        var positions = cells.Select(X).ToArray();
         var minimum = positions.Min();
         var alternate = buffer.Process("\x1b[?1049hسلام English دنیا");
         Render(view, alternate, "rtl-alternate.png");
-        var alternatePositions = Items("Cells").Select(X).ToArray();
+        var alternatePositions = Visible(Items("Cells")).Select(X).ToArray();
         if (positions.Length != alternatePositions.Length || positions.Zip(alternatePositions).Any(pair =>
             Math.Abs((pair.First - minimum) - (pair.Second - alternatePositions.Min())) > .01))
             throw new Exception("Alternate screen changed mixed-text ordering");
@@ -247,6 +259,59 @@ internal static class Program
         window.Close();
         Console.WriteLine("PASS Persian shaping with Smart RTL off, mixed alternate-screen ordering, opt-in Row RTL and retained visuals");
     }
+    private static void CheckTuiRtlFrame()
+    {
+        const int columns = 40;
+        var view = new TerminalView { Width = 800, Height = 420, FontFamily = new FontFamily("Consolas"), FontSize = 18, Background = Brushes.Black };
+        var buffer = new TerminalBuffer(columns, 8);
+        string Row(string inner) => "│" + inner.PadRight(columns - 2) + "│";
+        var snapshot = buffer.Process(
+            "\x1b[?1049h" +
+            "┌" + new string('─', columns - 2) + "┐\r\n" +
+            Row(" New session") + "\r\n" +
+            Row(" بذار وضعیت فعلی opencode رو ببینم") + "\r\n" +
+            Row(" تا دقیق بفهمم کدوم بخش از RTL اشکال داره") + "\r\n" +
+            "└" + new string('─', columns - 2) + "┘");
+        var bitmap = Render(view, snapshot, "tui-rtl-frame.png");
+
+        var stride = bitmap.PixelWidth * 4;
+        var pixels = new byte[stride * bitmap.PixelHeight];
+        bitmap.CopyPixels(pixels, stride, 0);
+        bool Border(double x, int row)
+        {
+            var offset = (row * 25 + 12) * stride + (int)x * 4;
+            return pixels[offset] > 40 || pixels[offset + 1] > 40 || pixels[offset + 2] > 40;
+        }
+
+        // Both frame columns must stay painted on Persian rows exactly like on
+        // the English row: reordering used to drag the frame with the text.
+        for (var row = 1; row <= 3; row++)
+        {
+            if (!Border(0.5 * 10.8, row) || !Border((columns - 0.5) * 10.8, row))
+                throw new Exception($"TUI frame column vanished on row {row}");
+        }
+
+        if (Border((columns + 0.5) * 10.8, 2) || Border((columns + 0.5) * 10.8, 3))
+            throw new Exception("RTL text overflowed the TUI frame");
+        Console.WriteLine("PASS TUI frames survive Persian reordering inside the grid");
+    }
+
+    private static void CheckPointerCursor()
+    {
+        var view = new TerminalView { Width = 800, Height = 420, FontFamily = new FontFamily("Consolas"), FontSize = 18, Background = Brushes.Black };
+        var buffer = new TerminalBuffer(40, 8);
+        Render(view, buffer.Process("plain shell output"), "cursor-text.png");
+        if (view.Cursor != System.Windows.Input.Cursors.IBeam)
+            throw new Exception("Plain shell output must keep the text selection cursor");
+        Render(view, buffer.Process("\x1b[?1049h\x1b[?1000h\x1b[?1006h"), "cursor-arrow.png");
+        if (view.Cursor != System.Windows.Input.Cursors.Arrow)
+            throw new Exception("A program that takes the mouse must show the arrow cursor");
+        Render(view, buffer.Process("\x1b[?1049l"), "cursor-restored.png");
+        if (view.Cursor != System.Windows.Input.Cursors.IBeam)
+            throw new Exception("Leaving the full-screen program did not restore the I-beam");
+        Console.WriteLine("PASS mouse-aware programs switch the pointer to an arrow");
+    }
+
     private static object RowDrawing(TerminalView view, int row)
     {
         var layouts = (System.Collections.IDictionary)typeof(TerminalView)
