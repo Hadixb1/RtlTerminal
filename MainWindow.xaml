@@ -577,6 +577,7 @@
                      PreviewMouseMove="TerminalTextBox_PreviewMouseMove"
                      PreviewMouseWheel="TerminalTextBox_PreviewMouseWheel"
                      PreviewMouseRightButtonDown="TerminalTextBox_PreviewMouseRightButtonDown"
+                     LostMouseCapture="TerminalTextBox_LostMouseCapture"
                      GotKeyboardFocus="TerminalTextBox_GotKeyboardFocus"
                      LostKeyboardFocus="TerminalTextBox_LostKeyboardFocus"
                      PreviewTextInput="TerminalTextBox_PreviewTextInput">

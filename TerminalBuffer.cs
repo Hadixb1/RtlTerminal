@@ -1148,6 +1148,16 @@ public sealed class TerminalBuffer
             _savedMainScreen = null;
             _alternateScreenActive = false;
             _wrapPending = false;
+            // Full-screen TUIs (opencode/OpenTUI and friends) enable mouse
+            // tracking for their alternate screen but crash-exit or simply
+            // forget to send ?1000l/?1002l/?1003l/?1006l on the way out. The
+            // shell prompt that owns the main screen never consumes mouse
+            // reports: a stale tracking mode kills wheel scrolling, right
+            // click paste and click-to-position until the terminal restarts.
+            // Leaving the alternate screen therefore always hands the mouse
+            // back to the interactive shell.
+            _mouseTrackingMode = 0;
+            _sgrMouse = false;
         }
     }
 

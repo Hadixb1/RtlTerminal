@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private bool _suppressRightMouseUp;
     private Key? _pendingContextMenuKey;
     private (int X, int Y, int Button)? _lastReportedMouseCell;
+    private int? _forwardedPressButton;
 
     public MainWindow()
     {
@@ -500,6 +501,7 @@ public partial class MainWindow : Window
         }
 
         _lastReportedMouseCell = null;
+        _forwardedPressButton = button;
         Mouse.Capture(TerminalTextBox);
         TerminalTextBox.Focus();
         e.Handled = true;
@@ -518,12 +520,41 @@ public partial class MainWindow : Window
 
         var button = GetMouseButtonCode(e.ChangedButton);
 
+        // The capture taken when the press was forwarded must always be
+        // undone, even when tracking ended mid-drag (TUI exit) or the pointer
+        // left the grid: a leaked capture freezes the mouse for the window.
+        if (_forwardedPressButton is { } forwarded)
+        {
+            _forwardedPressButton = null;
+            SendMouseEvent(e, forwarded, released: true);
+            _lastReportedMouseCell = null;
+            Mouse.Capture(null);
+            e.Handled = true;
+            return;
+        }
+
         if (button < 0 || !SendMouseEvent(e, button, released: true))
             return;
 
         _lastReportedMouseCell = null;
         Mouse.Capture(null);
         e.Handled = true;
+    }
+
+    private void TerminalTextBox_LostMouseCapture(
+        object sender,
+        MouseEventArgs e)
+    {
+        if (_forwardedPressButton is not { } button)
+            return;
+
+        // Capture can disappear without a matching mouse-up: another window
+        // takes it, the tab is switched, or the TUI dies while the button is
+        // still down. Report the missing release so the program that was
+        // tracking the mouse does not stay stuck in a half-drag.
+        _forwardedPressButton = null;
+        _lastReportedMouseCell = null;
+        SendMouseEvent(e, button, released: true);
     }
 
     private void TerminalTextBox_PreviewMouseMove(

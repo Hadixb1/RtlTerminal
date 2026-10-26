@@ -18,7 +18,9 @@ var tests = new (string Name, Action Run)[]
     ("snapshot rows are reused without hiding edits", SnapshotReuse),
     ("lone surrogates never crash the parser", LoneSurrogateSurvives),
     ("shrinking the grid keeps the cursor row on screen", ShrinkKeepsCursorVisible),
-    ("soft-wrapped rows are marked as continuations", SoftWrapIsTracked)
+    ("soft-wrapped rows are marked as continuations", SoftWrapIsTracked),
+    ("exiting alternate screen releases stuck mouse modes", ExitingAltScreenReleasesStuckMouse),
+    ("main-screen mouse tracking survives without alternate screen", MainScreenMouseTrackingIsPreserved)
 };
 
 var failures = new List<string>();
@@ -316,4 +318,42 @@ static void Assert(bool condition, string message)
 {
     if (!condition)
         throw new InvalidOperationException(message);
+}
+
+static void ExitingAltScreenReleasesStuckMouse()
+{
+    var buffer = new TerminalBuffer(20, 5);
+    buffer.Process("PS> ");
+
+    // opencode/OpenTUI startup: alternate screen + every mouse mode + SGR.
+    buffer.Process("\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
+
+    // Its real teardown restores modifyOtherKeys, paste, cursor and the main
+    // screen but never sends ?1000l/?1002l/?1003l/?1006l.
+    var restored = buffer.Process("\x1b[>4;0m\x1b[?2004l\x1b[?25h\x1b[?1049l");
+    Assert(!restored.Modes.AlternateScreen, "alternate screen was not left");
+    Assert(restored.Modes.MouseTrackingMode == 0,
+        "mouse tracking leaked into the shell after the TUI exited");
+    Assert(!restored.Modes.SgrMouse,
+        "SGR mouse encoding leaked into the shell after the TUI exited");
+
+    // The same defense applies to the 47/1047 forms of the mode.
+    buffer.Process("\x1b[?1047h\x1b[?1002h\x1b[?1006h");
+    var via47 = buffer.Process("\x1b[?47l");
+    Assert(!via47.Modes.AlternateScreen && via47.Modes.MouseTrackingMode == 0,
+        "leaving via DECSET 47 did not release mouse tracking");
+}
+
+static void MainScreenMouseTrackingIsPreserved()
+{
+    var buffer = new TerminalBuffer(20, 5);
+    var tracked = buffer.Process("\x1b[?1000h\x1b[?1006h");
+    Assert(tracked.Modes.MouseTrackingMode == 1000 && tracked.Modes.SgrMouse,
+        "main-screen mouse tracking was not recorded");
+
+    // Only the alternate-screen exit resets the mouse; a program that tracks
+    // the mouse in the main screen (tmux style) must keep its modes.
+    var still = buffer.Process("plain output\r\nmore output");
+    Assert(still.Modes.MouseTrackingMode == 1000 && still.Modes.SgrMouse,
+        "main-screen mouse tracking must not be reset by ordinary output");
 }
