@@ -483,6 +483,20 @@ public partial class MainWindow : Window
     {
         var button = GetMouseButtonCode(e.ChangedButton);
 
+        // Full-screen UIs light up and enable their widgets from hover state
+        // (opencode's tab strip, for example, only reacts once a motion event
+        // has reached the cell). Send the pointer position that the click is
+        // about to use before the button goes down, so the press cannot be
+        // swallowed by a stale hover.
+        if (button >= 0 &&
+            IsSgrMouseTrackingEnabled() &&
+            _lastRenderedSnapshot?.Modes.MouseTrackingMode == 1003 &&
+            TryGetMouseCell(e, out var hoverX, out var hoverY))
+        {
+            SendSgrMouse(3 + 32, hoverX, hoverY, released: false);
+            _lastReportedMouseCell = (hoverX, hoverY, 3);
+        }
+
         if (button < 0 || !SendMouseEvent(e, button, released: false))
         {
             TerminalTextBox.Focus();
@@ -634,10 +648,19 @@ public partial class MainWindow : Window
         if (!IsSgrMouseTrackingEnabled() ||
             !TryGetMouseCell(e, out var x, out var y))
         {
+            MouseDebug.Log(
+                $"{(released ? "UP  " : "DOWN")} NOT forwarded btn={button}" +
+                $" mode={_lastRenderedSnapshot?.Modes.MouseTrackingMode} sgr={_lastRenderedSnapshot?.Modes.SgrMouse}" +
+                $" selecting={TerminalTextBox.IsSelecting} modifiers={Keyboard.Modifiers}" +
+                $" | {TerminalTextBox.DescribeCell(e)}");
             return false;
         }
 
         SendSgrMouse(button, x, y, released);
+        MouseDebug.Log(
+            $"{(released ? "UP  " : "DOWN")} sent btn={button} => {x},{y}" +
+            $" mode={_lastRenderedSnapshot?.Modes.MouseTrackingMode}" +
+            $" | {TerminalTextBox.DescribeCell(e)}");
         return true;
     }
 
@@ -705,6 +728,12 @@ public partial class MainWindow : Window
             MouseButton.Right => 2,
             _ => -1
         };
+
+    private static string Visible(string text) =>
+        string.Concat(text.Select(character =>
+            character < 0x20 || character == 0x7f
+                ? $"\\x{(int)character:x2}"
+                : character.ToString()));
 
     private void SmartRtlMenuItem_Changed(object sender, RoutedEventArgs e)
     {
@@ -1799,7 +1828,13 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             }
 
             foreach (var response in snapshot.Responses)
+            {
+                // Capability handshakes decide whether a TUI turns on mouse
+                // reporting at all, so keep the exact replies on record.
+                if (response.Contains("$y") || response.EndsWith("c") || response.Contains("+r"))
+                    MouseDebug.Log($"reply {Visible(response)}");
                 session.Write(response);
+            }
 
             if (snapshot.Modes.SynchronizedOutput)
                 SuspendRendering(tab, snapshot.Revision);
@@ -1914,6 +1949,24 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
 
     private void Render(TerminalSnapshot snapshot)
     {
+        var previousModes = _lastRenderedSnapshot?.Modes;
+        if (previousModes is { } modes &&
+            (modes.MouseTrackingMode != snapshot.Modes.MouseTrackingMode ||
+             modes.SgrMouse != snapshot.Modes.SgrMouse ||
+             modes.AlternateScreen != snapshot.Modes.AlternateScreen))
+        {
+            MouseDebug.Log(
+                $"modes tracking {modes.MouseTrackingMode}->{snapshot.Modes.MouseTrackingMode}" +
+                $" sgr {modes.SgrMouse}->{snapshot.Modes.SgrMouse}" +
+                $" alt {modes.AlternateScreen}->{snapshot.Modes.AlternateScreen}");
+        }
+        else if (previousModes is null)
+        {
+            MouseDebug.Log(
+                $"modes start tracking {snapshot.Modes.MouseTrackingMode}" +
+                $" sgr {snapshot.Modes.SgrMouse} alt {snapshot.Modes.AlternateScreen}");
+        }
+
         _lastRenderedSnapshot = snapshot;
         _renderedSmartRtlEnabled = SmartRtlMenuItem.IsChecked;
         _restoringScrollPosition = true;

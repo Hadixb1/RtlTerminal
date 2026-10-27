@@ -151,13 +151,43 @@ public sealed class TerminalView : ContentControl
     }
 
     public void ScrollToVerticalOffset(double offset) => _scroll.ScrollToVerticalOffset(offset);
-    public bool TryGetGridCell(MouseEventArgs e, out int x, out int y)
+    public bool TryGetGridCell(MouseEventArgs e, out int x, out int y) =>
+        TryGetGridCell(e.GetPosition(_surface), out x, out y);
+
+    /// <summary>
+    /// Maps a point in surface space to the 1-based terminal cell the program
+    /// should receive. Kept separate from the mouse-event overload so the
+    /// mapping can be checked without a live pointer.
+    /// </summary>
+    public bool TryGetGridCell(Point point, out int x, out int y)
     {
-        var point = e.GetPosition(_surface);
-        x = GetLogicalColumn((int)Math.Floor(point.Y / _lineHeight), point.X) + 1;
-        y = (int)Math.Floor(point.Y / _lineHeight) - (_snapshot?.ScrollbackCount ?? 0) + 1;
+        var row = (int)Math.Floor(point.Y / _lineHeight);
+        x = GetLogicalColumn(row, point.X) + 1;
+        y = row - (_snapshot?.ScrollbackCount ?? 0) + 1;
         return point.X >= 0 && point.X < ViewportWidth && point.Y >= VerticalOffset &&
             point.Y < VerticalOffset + ViewportHeight && y > 0;
+    }
+
+    /// <summary>
+    /// Human readable snapshot of where a mouse event landed. Used by the mouse
+    /// diagnostics log so a "the widget ignores my click" report can be checked
+    /// against the cell the application actually received.
+    /// </summary>
+    internal string DescribeCell(MouseEventArgs e)
+    {
+        var point = e.GetPosition(_surface);
+        var row = (int)Math.Floor(point.Y / _lineHeight);
+        var physical = (int)Math.Floor(point.X / _cellWidth);
+        var logical = GetLogicalColumn(row, point.X);
+        var text = _snapshot is not null && row >= 0 && row < _snapshot.Lines.Count
+            ? Text(_snapshot.Lines[row])
+            : string.Empty;
+        var from = Math.Clamp(logical - 8, 0, text.Length);
+        var to = Math.Clamp(logical + 9, from, text.Length);
+        return $"point=({point.X:0.0},{point.Y:0.0}) row={row} physCol={physical} logCol={logical}" +
+            $" cell={_cellWidth:0.00}x{_lineHeight:0.00} viewport={ViewportWidth:0.0}x{ViewportHeight:0.0}" +
+            $" offset={VerticalOffset:0.0} scrollback={_snapshot?.ScrollbackCount ?? -1}" +
+            $" alt={_snapshot?.Modes.AlternateScreen} cells=\"{text.Substring(from, to - from)}\"";
     }
 
     private int GetLogicalColumn(int row, double visualX)

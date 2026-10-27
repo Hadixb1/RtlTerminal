@@ -84,6 +84,7 @@ internal static class Program
         CheckRtlModes();
         CheckTuiRtlFrame();
         CheckPointerCursor();
+        CheckMouseCellMapping();
         CheckGlyphReuse();
         CheckDialogRedraw();
         CheckCodexPersian();
@@ -294,6 +295,53 @@ internal static class Program
         if (Border((columns + 0.5) * 10.8, 2) || Border((columns + 0.5) * 10.8, 3))
             throw new Exception("RTL text overflowed the TUI frame");
         Console.WriteLine("PASS TUI frames survive Persian reordering inside the grid");
+    }
+
+    private static void CheckMouseCellMapping()
+    {
+        const int columns = 40;
+        const double cellWidth = 10.8, lineHeight = 25;
+        var view = new TerminalView { Width = 800, Height = 420, FontFamily = new FontFamily("Consolas"), FontSize = 18, Background = Brushes.Black };
+        var buffer = new TerminalBuffer(columns, 8);
+        var header = " New session" + new string(' ', 22) + "+";
+        var snapshot = buffer.Process("\x1b[?1049h" + header + "\r\n┃ سلام دنیا │");
+        Render(view, snapshot, "mouse-cells.png");
+
+        Point Center(int column, int row) =>
+            new(column * cellWidth + cellWidth / 2, row * lineHeight + lineHeight / 2);
+
+        // The "+" of a TUI tab strip must be addressed at the column the
+        // program drew it in: one column off is the difference between a new
+        // session opening and the click appearing to be swallowed.
+        var plus = header.IndexOf('+');
+        if (!view.TryGetGridCell(Center(plus, 0), out var plusX, out var plusY))
+            throw new Exception("The tab strip cell was not addressable");
+        if (plusX != plus + 1 || plusY != 1)
+            throw new Exception($"Clicking the tab strip plus reported cell {plusX},{plusY} instead of {plus + 1},1");
+
+        // A mirrored row must invert the click: the character drawn furthest
+        // left belongs to the highest program column. Anything else sends the
+        // click to the wrong widget.
+        var layoutsField = typeof(TerminalView).GetField("_layouts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var layouts = (System.Collections.IDictionary)layoutsField.GetValue(view)!;
+        var layout = layouts[1]!;
+        object? Cell(int start) => ((System.Collections.IEnumerable)layout.GetType().GetProperty("Cells")!
+            .GetValue(layout)!).Cast<object>()
+            .FirstOrDefault(cell => (int)cell.GetType().GetProperty("Start")!.GetValue(cell)! == start);
+
+        double X(object cell) => (double)cell.GetType().GetProperty("X")!.GetValue(cell)!;
+        double Width(object cell) => (double)cell.GetType().GetProperty("Width")!.GetValue(cell)!;
+
+        // "سلام دنیا": the leading letter of the first word sits at the right
+        // edge of the mirrored span, and the trailing letter at the left edge.
+        var firstLetter = Cell(2) ?? throw new Exception("Mirrored row lost its first letter");
+        var lastLetter = Cell(10) ?? throw new Exception("Mirrored row lost its last letter");
+        if (!view.TryGetGridCell(new Point(X(firstLetter) + Width(firstLetter) / 2, 1 * lineHeight + lineHeight / 2), out var firstX, out _) || firstX != 3)
+            throw new Exception($"The right edge of the mirrored word reported column {firstX} instead of 3");
+        if (!view.TryGetGridCell(new Point(X(lastLetter) + Width(lastLetter) / 2, 1 * lineHeight + lineHeight / 2), out var lastX, out _) || lastX != 11)
+            throw new Exception($"The left edge of the mirrored word reported column {lastX} instead of 11");
+
+        Console.WriteLine("PASS tab strip and mirrored rows report the program column under the pointer");
     }
 
     private static void CheckPointerCursor()
