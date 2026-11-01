@@ -1079,16 +1079,43 @@ public partial class MainWindow : Window
             _ => "Command Prompt"
         };
 
+    /// <summary>Width of the startup banner frame, in terminal columns.</summary>
+    private const int BannerWidth = 58;
+
+    private static readonly string BannerBorder =
+        "+" + new string('-', BannerWidth - 2) + "+";
+
+    /// <summary>
+    /// One banner row: "| " + content padded to the frame width + "|". Built from
+    /// a single width constant so a longer version string cannot push the closing
+    /// border past the frame (the old literal hard-coded spaces for "1.0.35").
+    /// </summary>
+    private static string BannerRow(string content)
+    {
+        const int inner = BannerWidth - 3; // "| " and the closing "|"
+        var text = content.Length > inner ? content[..inner] : content;
+        return "| " + text.PadRight(inner) + "|";
+    }
+
     private static string GetProfileCommand(TerminalProfile profile)
     {
         var esc = '\x1b';
-        return (profile switch
+        // Both shells print the same frame: keep the rows computed so the version
+        // row and the border stay flush for any <Version> in the csproj.
+        var versionRow = BannerRow($"RtlTerminal v{AppVersion.Display}");
+        var creditRow = BannerRow("by Hadi");
+        // cmd needs the pipes escaped (^|) and cannot take the leading "| " form,
+        // so it receives the body of each row between the escaped borders.
+        var versionBody = versionRow[1..^1];
+        var creditBody = creditRow[1..^1];
+
+        return profile switch
         {
             TerminalProfile.PowerShell =>
-                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""$env:PT_DISABLE_VT='1'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('+--------------------------------------------------------+','| RtlTerminal v{{APP_VERSION}}                           |','| by Hadi                                                |','+--------------------------------------------------------+',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
+                $@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command ""$env:PT_DISABLE_VT='1'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; function prompt {{ Write-Host \""PS $($executionContext.SessionState.Path.CurrentLocation)>\"" -NoNewline -ForegroundColor Red; return \""{esc}[32m \"" }}; $lines=@('{BannerBorder}','{versionRow}','{creditRow}','{BannerBorder}',''); $lines | ForEach-Object {{ Write-Host $_ -ForegroundColor Red }}""",
             _ =>
-                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m+--------------------------------------------------------+& echo ^| RtlTerminal v{{APP_VERSION}}                                     ^|& echo ^| by Hadi                                                 ^|& echo +--------------------------------------------------------+& echo."""
-        }).Replace("{APP_VERSION}", AppVersion.Display);
+                $@"C:\Windows\System32\cmd.exe /D /Q /K ""chcp 65001>nul & set PROMPT={esc}[31m$P$G{esc}[32m & echo {esc}[31m{BannerBorder}& echo ^|{versionBody}^|& echo ^|{creditBody}^|& echo {BannerBorder}& echo."""
+        };
     }
 
     private static TerminalProfile LoadDefaultProfile()

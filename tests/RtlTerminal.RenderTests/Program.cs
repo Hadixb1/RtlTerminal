@@ -89,6 +89,85 @@ internal static class Program
         CheckDialogRedraw();
         CheckCodexPersian();
         CheckItalic();
+        CheckStartupBanner();
+    }
+
+    /// <summary>
+    /// The startup banner is a hand-drawn frame. Both shells must produce the same
+    /// 58-column rows for any version string; the version row used to be padded by
+    /// hand and drifted once the version grew past "1.0.35".
+    /// </summary>
+    private static void CheckStartupBanner()
+    {
+        const System.Reflection.BindingFlags flags =
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        var profileType = typeof(MainWindow).GetNestedType("TerminalProfile", System.Reflection.BindingFlags.NonPublic)!;
+        var getCommand = typeof(MainWindow).GetMethod("GetProfileCommand", flags)!;
+        const int expectedWidth = 58;
+
+        foreach (var profile in Enum.GetValues(profileType))
+        {
+            var name = profile!.ToString()!;
+            var command = (string)getCommand.Invoke(null, [profile])!;
+            var rows = BannerRows(command, name);
+            if (rows.Count != 4)
+                throw new Exception($"{name} banner has {rows.Count} rows instead of 4");
+            foreach (var row in rows)
+            {
+                var width = row.EnumerateRunes().Count();
+                if (width != expectedWidth)
+                    throw new Exception(
+                        $"{name} banner row is {width} columns instead of {expectedWidth}: |{row}|");
+            }
+        }
+
+        Console.WriteLine("PASS startup banner borders close on a 58-column frame in both shells");
+    }
+
+    /// <summary>
+    /// Extracts the rendered banner rows from a profile command line: the quoted
+    /// items of the PowerShell $lines array, or the cmd `echo` segments with the
+    /// caret escapes and colour codes removed.
+    /// </summary>
+    private static List<string> BannerRows(string command, string profileName)
+    {
+        var rows = new List<string>();
+
+        if (profileName == "PowerShell")
+        {
+            var start = command.IndexOf("$lines=@(", StringComparison.Ordinal);
+            var end = command.IndexOf(");", start, StringComparison.Ordinal);
+            if (start < 0 || end < 0) return rows;
+            foreach (var piece in command[(start + "$lines=@(".Length)..end].Split("','"))
+            {
+                var text = piece.Trim();
+                if (text.StartsWith('\'')) text = text[1..];
+                if (text.EndsWith('\'')) text = text[..^1];
+                if (text.Length > 0) rows.Add(text);
+            }
+            return rows;
+        }
+
+        foreach (var segment in command.Split("& echo"))
+        {
+            var text = segment.Trim().TrimStart(' ').TrimEnd('"');
+            // cmd appends the colour code before a row: ESC[31m.
+            if (text.StartsWith('\x1b'))
+            {
+                var end = text.IndexOf('m');
+                if (end > 0) text = text[(end + 1)..];
+            }
+            // The prompt assignment and the trailing `echo.` are not banner rows.
+            if (text.Contains("$P$G", StringComparison.Ordinal))
+                text = text[(text.IndexOf("$P$G", StringComparison.Ordinal) + 4)..].TrimStart().TrimStart('&');
+            if (text.EndsWith('.')) text = text[..^1];
+            text = text.Trim();
+            if (text.StartsWith("^|", StringComparison.Ordinal) && text.EndsWith("^|", StringComparison.Ordinal))
+                rows.Add(text.Replace("^|", "|"));
+            else if (text.StartsWith('+'))
+                rows.Add(text);
+        }
+        return rows;
     }
     private static void CheckItalic()
     {

@@ -9,6 +9,8 @@ using System.IO;
 using System.Runtime.InteropServices;
 
 using System.Text;
+using System.Threading.Channels;
+using System.Threading.Tasks;
 
 
 
@@ -40,6 +42,22 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
     private readonly object _inputLock = new();
 
+    /// <summary>
+    /// Input is handed to a dedicated writer thread instead of being written on
+    /// the caller's thread. A synchronous write to the ConPTY input pipe can
+    /// block until the child drains it, and when the caller is the UI thread
+    /// that freezes the window; worse, the output reader replies to capability
+    /// queries through the same path, which deadlocks three ways (UI waits for
+    /// the pipe, ConPTY waits for the reader, the reader waits for the lock).
+    /// Enqueue-and-return keeps every caller non-blocking, and one reader on one
+    /// channel keeps byte order identical to the old synchronous writes.
+    /// </summary>
+    private readonly Channel<byte[]> _inputQueue =
+        Channel.CreateUnbounded<byte[]>(
+            new UnboundedChannelOptions { SingleReader = true });
+
+    private Task? _inputPump;
+
     private PROCESS_INFORMATION _processInfo;
 
     private bool _disposed;
@@ -61,10 +79,12 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     public ConPtySession(short columns, short rows)
 
     {
+        // 256 KB pipe buffer prevents synchronous write deadlock and UI stalls
+        // on large pastes or rapid bursts (default 0 allocates only 4 KB).
+        const uint pipeBufferSize = 256 * 1024;
+        CreatePipe(out var inputReadSide, out var inputWriteSide, IntPtr.Zero, pipeBufferSize);
 
-        CreatePipe(out var inputReadSide, out var inputWriteSide, IntPtr.Zero, 0);
-
-        CreatePipe(out var outputReadSide, out var outputWriteSide, IntPtr.Zero, 0);
+        CreatePipe(out var outputReadSide, out var outputWriteSide, IntPtr.Zero, pipeBufferSize);
 
 
 
@@ -92,7 +112,8 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
         _inputWriter = new FileStream(_inputWriterHandle, FileAccess.Write, 4096, isAsync: false);
 
-        _outputReader = new FileStream(_outputReaderHandle, FileAccess.Read, 4096, isAsync: false);
+        // A larger read buffer matches the 8 KB read loop and the resized pipe.
+        _outputReader = new FileStream(_outputReaderHandle, FileAccess.Read, 8192, isAsync: false);
 
     }
 
@@ -226,6 +247,14 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
             InputDebug.Log($"CONPTY-CP exception: {ex.Message}");
         }
 
+        // Start draining input only after the child exists: the writer thread
+        // blocks on the channel, so it costs nothing until the first keystroke.
+        _inputPump = Task.Factory.StartNew(
+            PumpInputQueue,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
     }
 
     public int Read(byte[] buffer)
@@ -256,9 +285,9 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     /// </summary>
     public void Write(string text, bool translateQuestionMark = true)
     {
-        if (_inputWriter is null)
+        if (_disposed)
         {
-            InputDebug.Log($"WRITE DROPPED (writer null) {InputDebug.CodePoints(text)}");
+            InputDebug.Log($"WRITE DROPPED (disposed) {InputDebug.CodePoints(text)}");
             return;
         }
 
@@ -276,36 +305,54 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         }
 
         var bytes = Encoding.UTF8.GetBytes(text);
-        lock (_inputLock)
+        // Enqueue only: the writer thread owns the pipe and the lock, so no
+        // caller can be blocked by a slow or full ConPTY input pipe.
+        if (!_inputQueue.Writer.TryWrite(bytes))
+            InputDebug.Log($"WRITE DROPPED (queue closed) {InputDebug.CodePoints(text)}");
+
+    }
+
+    /// <summary>
+    /// Drains the input channel in order. Runs on its own thread so a blocked
+    /// pipe write can never stall the UI or the output reader.
+    /// </summary>
+    private void PumpInputQueue()
+    {
+        foreach (var bytes in _inputQueue.Reader.ReadAllAsync().ToBlockingEnumerable())
         {
-            if (_inputWriter is null)
+            lock (_inputLock)
             {
-                InputDebug.Log($"WRITE DROPPED (writer null, locked) {InputDebug.CodePoints(text)}");
-                return;
-            }
-            try
-            {
-                _inputWriter.Write(bytes, 0, bytes.Length);
-                _inputWriter.Flush();
-                if (text.Contains('?') || text.Contains('\u061f') || text.StartsWith("\x1b[191;"))
-                    InputDebug.Log($"WRITE ok bytes={bytes.Length} hex={InputDebug.Hex(bytes)}");
-            }
-            catch (IOException exception)
-            {
-                InputDebug.Log($"WRITE FAILED IOException: {exception.Message} {InputDebug.CodePoints(text)}");
-                // The child can exit between an input event and the write. A
-                // closed ConPTY pipe is a normal session condition, not an app
-                // fatal error (especially when Ctrl+C stops a TUI).
-                _inputWriter?.Dispose();
-                _inputWriter = null;
-            }
-            catch (ObjectDisposedException exception)
-            {
-                InputDebug.Log($"WRITE FAILED ObjectDisposed: {exception.Message} {InputDebug.CodePoints(text)}");
-                _inputWriter = null;
+                if (_inputWriter is null)
+                {
+                    InputDebug.Log("WRITE DROPPED (writer null, pump)");
+                    return;
+                }
+
+                try
+                {
+                    _inputWriter.Write(bytes, 0, bytes.Length);
+                    _inputWriter.Flush();
+                    if (bytes.Length >= 2)
+                        InputDebug.Log($"WRITE ok bytes={bytes.Length} hex={InputDebug.Hex(bytes)}");
+                }
+                catch (IOException exception)
+                {
+                    InputDebug.Log($"WRITE FAILED IOException: {exception.Message}");
+                    // The child can exit between an input event and the write. A
+                    // closed ConPTY pipe is a normal session condition, not an app
+                    // fatal error (especially when Ctrl+C stops a TUI).
+                    _inputWriter?.Dispose();
+                    _inputWriter = null;
+                    return;
+                }
+                catch (ObjectDisposedException exception)
+                {
+                    InputDebug.Log($"WRITE FAILED ObjectDisposed: {exception.Message}");
+                    _inputWriter = null;
+                    return;
+                }
             }
         }
-
     }
 
 
@@ -385,21 +432,25 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
         // Stop accepting input, but keep the output reader alive while the
         // pseudoconsole shuts down. Older Windows builds can wait forever if
         // a client's final output is not drained concurrently.
-        lock (_inputLock)
-        {
-            _inputWriter?.Dispose();
-            _inputWriter = null;
-        }
+        _inputQueue.Writer.TryComplete();
 
+        // Close the pseudoconsole BEFORE touching the writer or its lock. A pump
+        // thread can be parked inside WriteFile on a full input pipe; closing the
+        // pseudoconsole tears the pipe down under it and releases that write.
+        // Taking _inputLock first would deadlock the shutdown against it and the
+        // window would never close. Skipped during construction failure, when no
+        // child exists yet.
         if (_pseudoConsole != IntPtr.Zero)
-
         {
-
             ClosePseudoConsole(_pseudoConsole);
-
             _pseudoConsole = IntPtr.Zero;
-
         }
+
+        // Now the pump can finish. The writer is disposed without the lock: a
+        // concurrent WriteFile either returns the teardown error or throws
+        // ObjectDisposedException, both of which the pump already swallows.
+        _inputWriter?.Dispose();
+        _inputWriter = null;
 
         _outputReader?.Dispose();
 

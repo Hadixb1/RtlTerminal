@@ -142,7 +142,8 @@ dotnet publish RtlTerminal.csproj `
   -r win-x64 `
   --self-contained true `
   -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:IncludeNativeLibrariesForExtract=true `
+  -p:IncludeAllContentForSelfExtract=true `
   -p:PublishTrimmed=false `
   -o publish\win-x64
 ```
@@ -279,7 +280,7 @@ Bug reports, compatibility reports, pull requests and translations are welcome. 
 
 ### License
 
-No license file is currently included. Add a `LICENSE` file before accepting external contributions or distributing the source under an open-source license.
+Released under the MIT License. See [LICENSE](LICENSE).
 
 ---
 
@@ -355,7 +356,8 @@ dotnet publish RtlTerminal.csproj `
   -r win-x64 `
   --self-contained true `
   -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:IncludeNativeLibrariesForExtract=true `
+  -p:IncludeAllContentForSelfExtract=true `
   -p:PublishTrimmed=false `
   -o publish\win-x64
 ```
@@ -407,7 +409,7 @@ git push origin main
 
 ### مجوز
 
-در حال حاضر فایل مجوز در پروژه وجود ندارد. قبل از انتشار پروژه به‌عنوان نرم‌افزار متن‌باز، یک فایل `LICENSE` مناسب اضافه کنید.
+این پروژه تحت مجوز MIT منتشر شده است. فایل [LICENSE](LICENSE) را ببینید.
 
 ---
 
@@ -480,7 +482,8 @@ dotnet publish RtlTerminal.csproj `
   -r win-x64 `
   --self-contained true `
   -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:IncludeNativeLibrariesForExtract=true `
+  -p:IncludeAllContentForSelfExtract=true `
   -p:PublishTrimmed=false `
   -o publish\win-x64
 ```
@@ -532,7 +535,7 @@ git push origin main
 
 ### الترخيص
 
-لا يتضمن المشروع حالياً ملف ترخيص. أضف ملف `LICENSE` مناسباً قبل نشر المشروع كمشروع مفتوح المصدر أو قبول مساهمات خارجية.
+البرنامج منشور تحت رخصة MIT. راجع [LICENSE](LICENSE).
 
 ---
 

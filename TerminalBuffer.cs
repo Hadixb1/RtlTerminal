@@ -1340,7 +1340,13 @@ public sealed class TerminalBuffer
     private void EraseCharacters(int count)
     {
         count = Math.Clamp(count, 1, _columns - _cursorColumn);
+        // Erasing half of a wide glyph would leave a dangling continuation cell
+        // painted with the old character's background; clear both halves first,
+        // exactly like DeleteCharacters/InsertCharacters do.
+        NormalizeWideCharacterBoundary(_cursorRow, _cursorColumn);
+        NormalizeWideCharacterBoundary(_cursorRow, _cursorColumn + count);
         ClearCells(_cursorRow, _cursorColumn, count);
+        NormalizeRow(_cursorRow);
     }
 
     private void ClearAll()
