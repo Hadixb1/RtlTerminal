@@ -273,7 +273,7 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
 
 
-    private static readonly bool SupportsWin32InputMode =
+    public static bool SupportsWin32InputMode { get; } =
         Environment.OSVersion.Version.Build >= 22000;
 
     /// <summary>

@@ -506,6 +506,7 @@ public partial class MainWindow : Window
         {
             TerminalTextBox.Focus();
             if (e.ChangedButton == MouseButton.Left &&
+                e.ClickCount == 1 &&
                 _lastRenderedSnapshot is { } snapshot &&
                 _session is not null &&
                 Keyboard.Modifiers == ModifierKeys.None &&
@@ -689,6 +690,20 @@ public partial class MainWindow : Window
     private bool TryGetMouseCell(MouseEventArgs e, out int x, out int y) =>
         TerminalTextBox.TryGetGridCell(e, out x, out y);
 
+    private static string GetArrowSequence(bool left, bool applicationCursorKeys)
+    {
+        if (ConPtySession.SupportsWin32InputMode)
+        {
+            return left
+                ? "\x1b[37;75;0;1;0;1_\x1b[37;75;0;0;0;1_"
+                : "\x1b[39;77;0;1;0;1_\x1b[39;77;0;0;0;1_";
+        }
+
+        return left
+            ? (applicationCursorKeys ? "\x1bOD" : "\x1b[D")
+            : (applicationCursorKeys ? "\x1bOC" : "\x1b[C");
+    }
+
     /// <summary>
     /// Clicking on the prompt walks the shell cursor to the clicked cell with
     /// arrow keys. Every key goes out in a single write: thousands of separate
@@ -699,19 +714,50 @@ public partial class MainWindow : Window
         if (_session is null)
             return;
 
-        var columns = GetColumns();
+        var cursorRow = snapshot.CursorRow;
+        var cursorCol = snapshot.CursorColumn;
+
+        if (cursorRow < 0 || cursorRow >= snapshot.Lines.Count)
+            return;
+
+        var minInputRow = cursorRow;
+        while (minInputRow > 0 && minInputRow < snapshot.Lines.Count && snapshot.Lines[minInputRow].WrappedFromPrevious)
+            minInputRow--;
+
+        var maxInputRow = cursorRow;
+        while (maxInputRow < snapshot.Lines.Count - 1 && snapshot.Lines[maxInputRow + 1].WrappedFromPrevious)
+            maxInputRow++;
+
         // row is 1-based and viewport relative; snapshot.CursorRow is absolute.
-        var clickIndex = ((row - 1) + snapshot.ScrollbackCount) * columns + (column - 1);
-        var cursorIndex = snapshot.CursorRow * columns + snapshot.CursorColumn;
+        var clickRow = (row - 1) + snapshot.ScrollbackCount;
+        if (clickRow < minInputRow || clickRow > maxInputRow)
+            return;
+
+        var clickCol = column - 1;
+        if (clickCol < 0)
+            clickCol = 0;
+
+        if (clickRow == minInputRow)
+        {
+            var promptEndCol = GetPromptEndColumn(snapshot, minInputRow);
+            if (clickCol < promptEndCol)
+                clickCol = promptEndCol;
+        }
+
+        var lineCellLength = snapshot.Lines[clickRow].CellLength;
+        var maxCol = Math.Max(lineCellLength, clickRow == cursorRow ? cursorCol : 0);
+        if (clickCol > maxCol)
+            clickCol = maxCol;
+
+        var columns = GetColumns();
+        var clickIndex = clickRow * columns + clickCol;
+        var cursorIndex = cursorRow * columns + cursorCol;
         var difference = clickIndex - cursorIndex;
 
         if (difference == 0 || Math.Abs(difference) >= 2000)
             return;
 
-        var applicationCursorKeys = snapshot.Modes.ApplicationCursorKeys;
-        var sequence = difference < 0
-            ? applicationCursorKeys ? "\x1bOD" : "\x1b[D"
-            : applicationCursorKeys ? "\x1bOC" : "\x1b[C";
+        var sequence = GetArrowSequence(difference < 0, snapshot.Modes.ApplicationCursorKeys);
 
         _session.Write(string.Concat(
             Enumerable.Repeat(sequence, Math.Abs(difference))));
@@ -772,8 +818,8 @@ public partial class MainWindow : Window
             return true;
 
         var appCursor = snapshot.Modes.ApplicationCursorKeys;
-        var rightSeq = appCursor ? "\x1bOC" : "\x1b[C";
-        var leftSeq = appCursor ? "\x1bOD" : "\x1b[D";
+        var rightSeq = GetArrowSequence(left: false, appCursor);
+        var leftSeq = GetArrowSequence(left: true, appCursor);
 
         var diff = endIndex - cursorIndex;
         var moves = new StringBuilder();
