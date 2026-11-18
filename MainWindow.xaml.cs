@@ -425,6 +425,11 @@ public partial class MainWindow : Window
         // third-party Persian layouts. This is the single source of truth for all
         // printable characters — no layout detection, no KeyDown handling for ? or
         // any other printable key.
+        if (TerminalTextBox.HasSelection)
+        {
+            DeleteSelection();
+        }
+
         InputDebug.Log($"TEXTINPUT write {InputDebug.CodePoints(text)}");
         _session.Write(text);
         e.Handled = true;
@@ -710,6 +715,113 @@ public partial class MainWindow : Window
 
         _session.Write(string.Concat(
             Enumerable.Repeat(sequence, Math.Abs(difference))));
+    }
+
+    private bool DeleteSelection()
+    {
+        if (!TerminalTextBox.HasSelection || _session is null || _lastRenderedSnapshot is not { } snapshot)
+            return false;
+
+        var (start, end) = TerminalTextBox.SelectionRange();
+        TerminalTextBox.ClearSelection();
+
+        if (snapshot.Modes.AlternateScreen)
+            return true;
+        var columns = GetColumns();
+        var cursorRow = snapshot.CursorRow;
+        var cursorCol = snapshot.CursorColumn;
+
+        var minInputRow = cursorRow;
+        while (minInputRow > 0 && snapshot.Lines[minInputRow].WrappedFromPrevious)
+            minInputRow--;
+
+        var maxInputRow = cursorRow;
+        while (maxInputRow < snapshot.Lines.Count - 1 && snapshot.Lines[maxInputRow + 1].WrappedFromPrevious)
+            maxInputRow++;
+
+        if (end.Row < minInputRow || start.Row > maxInputRow)
+            return true;
+
+        var effectiveStartRow = Math.Max(start.Row, minInputRow);
+        var effectiveEndRow = Math.Min(end.Row, maxInputRow);
+
+        var startLineLen = TerminalTextBox.GetLineTextLength(effectiveStartRow);
+        var endLineLen = TerminalTextBox.GetLineTextLength(effectiveEndRow);
+
+        var startOffset = (effectiveStartRow == start.Row) ? Math.Clamp(start.Offset, 0, startLineLen) : 0;
+        var endOffset = (effectiveEndRow == end.Row) ? Math.Clamp(end.Offset, 0, endLineLen) : endLineLen;
+
+        var startCol = TerminalTextBox.GetLogicalColumnFromOffset(effectiveStartRow, startOffset);
+        var endCol = TerminalTextBox.GetLogicalColumnFromOffset(effectiveEndRow, endOffset);
+
+        var startIndex = effectiveStartRow * columns + startCol;
+        var endIndex = effectiveEndRow * columns + endCol;
+        var cursorIndex = cursorRow * columns + cursorCol;
+
+        if (startIndex > endIndex)
+            (startIndex, endIndex) = (endIndex, startIndex);
+
+        var promptEndCol = GetPromptEndColumn(snapshot, minInputRow);
+        var promptIndex = minInputRow * columns + promptEndCol;
+
+        if (startIndex < promptIndex)
+            startIndex = promptIndex;
+
+        var count = endIndex - startIndex;
+        if (count <= 0)
+            return true;
+
+        var appCursor = snapshot.Modes.ApplicationCursorKeys;
+        var rightSeq = appCursor ? "\x1bOC" : "\x1b[C";
+        var leftSeq = appCursor ? "\x1bOD" : "\x1b[D";
+
+        var diff = endIndex - cursorIndex;
+        var moves = new StringBuilder();
+        if (diff > 0)
+        {
+            for (var i = 0; i < diff; i++) moves.Append(rightSeq);
+        }
+        else if (diff < 0)
+        {
+            for (var i = 0; i < -diff; i++) moves.Append(leftSeq);
+        }
+
+        if (moves.Length > 0)
+        {
+            _session.Write(moves.ToString());
+        }
+
+        _session.Write(new string('\x7f', count));
+        return true;
+    }
+
+    private static int GetPromptEndColumn(TerminalSnapshot snapshot, int row)
+    {
+        if (row < 0 || row >= snapshot.Lines.Count)
+            return 0;
+
+        var line = snapshot.Lines[row];
+        var col = 0;
+        var foundPrompt = false;
+
+        foreach (var run in line.Runs)
+        {
+            var isPromptColor = run.Style.Foreground is { Red: 197, Green: 15, Blue: 31 };
+            if (isPromptColor)
+            {
+                foundPrompt = true;
+                foreach (var rune in run.Text.EnumerateRunes())
+                    col += TerminalBuffer.GetCellWidth(rune);
+            }
+            else if (foundPrompt)
+            {
+                if (run.Text.StartsWith(" "))
+                    col += 1;
+                break;
+            }
+        }
+
+        return foundPrompt ? col : 0;
     }
 
     private bool IsSgrMouseTrackingEnabled() =>
@@ -1469,6 +1581,15 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
 
         var altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
         var key = GetEffectiveKey(e);
+
+        if (!altPressed && TerminalTextBox.HasSelection && (key is Key.Back or Key.Delete))
+        {
+            if (DeleteSelection())
+            {
+                e.Handled = true;
+                return;
+            }
+        }
         // Arrow-swap only for plain key presses; Alt-combos fall through below.
         if (!altPressed && !controlPressed && KeyboardHelper.IsPersianKeyboard())
         {
@@ -1648,6 +1769,9 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
     {
         if (_session is null)
             return;
+
+        if (TerminalTextBox.HasSelection)
+            DeleteSelection();
 
         IDataObject? dataObject = null;
         for (var attempt = 0; attempt < 5; attempt++)

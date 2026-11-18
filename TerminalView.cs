@@ -268,10 +268,38 @@ public sealed class TerminalView : ContentControl
         return result.ToString();
     }
 
-    private ((int Row, int Offset) Start, (int Row, int Offset) End) SelectionRange()
+    public ((int Row, int Offset) Start, (int Row, int Offset) End) SelectionRange()
     {
         var a = _anchor!.Value; var b = _end!.Value;
         return a.Row < b.Row || a.Row == b.Row && a.Offset <= b.Offset ? (a, b) : (b, a);
+    }
+
+    public int GetLineTextLength(int row)
+    {
+        if (_snapshot is null || row < 0 || row >= _snapshot.Lines.Count)
+            return 0;
+        return Text(_snapshot.Lines[row]).Length;
+    }
+
+    public int GetLogicalColumnFromOffset(int row, int offset)
+    {
+        if (_snapshot is null || row < 0 || row >= _snapshot.Lines.Count)
+            return offset;
+
+        var text = Text(_snapshot.Lines[row]);
+        if (text.Length == 0 || offset <= 0)
+            return 0;
+
+        var layout = Layout(row);
+        var col = 0;
+        foreach (var cell in layout.Cells.OrderBy(c => c.Start))
+        {
+            if (cell.Start >= offset)
+                break;
+            var columns = (int)Math.Round(cell.GridWidth / _cellWidth);
+            col += Math.Max(1, columns);
+        }
+        return col;
     }
 
     public bool IsLinkAt(MouseEventArgs e) => LinkAt(e.GetPosition(_surface)) is not null;
@@ -310,8 +338,17 @@ public sealed class TerminalView : ContentControl
         if (e.ClickCount >= 3 && _snapshot is not null)
         {
             var lineLength = Text(_snapshot.Lines[hit.Value.Row]).Length;
-            _anchor = (hit.Value.Row, 0);
-            _end = (hit.Value.Row, lineLength);
+            var promptOffset = GetPromptOffset(hit.Value.Row);
+            if (promptOffset > 0 && hit.Value.Offset >= promptOffset)
+            {
+                _anchor = (hit.Value.Row, promptOffset);
+                _end = (hit.Value.Row, lineLength);
+            }
+            else
+            {
+                _anchor = (hit.Value.Row, 0);
+                _end = (hit.Value.Row, lineLength);
+            }
         }
         else if (e.ClickCount == 2 && _snapshot is not null)
         {
@@ -348,6 +385,34 @@ public sealed class TerminalView : ContentControl
         _surface.CaptureMouse();
         _surface.InvalidateVisual();
         e.Handled = true;
+    }
+
+    private int GetPromptOffset(int row)
+    {
+        if (_snapshot is null || row < 0 || row >= _snapshot.Lines.Count)
+            return 0;
+
+        var line = _snapshot.Lines[row];
+        var offset = 0;
+        var foundPrompt = false;
+
+        foreach (var run in line.Runs)
+        {
+            var isPromptColor = run.Style.Foreground is { Red: 197, Green: 15, Blue: 31 };
+            if (isPromptColor)
+            {
+                foundPrompt = true;
+                offset += run.Text.Length;
+            }
+            else if (foundPrompt)
+            {
+                if (run.Text.StartsWith(" "))
+                    offset += 1;
+                break;
+            }
+        }
+
+        return foundPrompt ? offset : 0;
     }
 
     private void ExtendSelection(object sender, MouseEventArgs e)

@@ -66,6 +66,15 @@ internal static class Program
             throw new Exception("RTL selection did not preserve logical Unicode order");
         Render(view, snapshot, "selected.png");
         view.ClearSelection();
+        if (view.HasSelection) throw new Exception("ClearSelection failed");
+
+        var testBuffer = new TerminalBuffer(80, 24);
+        var promptSnapshot = testBuffer.Process("\x1b[31mPS C:\\Users\\Hadi>\x1b[32m سلام دنیا");
+        Render(view, promptSnapshot, "prompt-test.png");
+        var lineLen = view.GetLineTextLength(0);
+        if (lineLen <= 0) throw new Exception("Line text length was 0");
+        var promptCol = view.GetLogicalColumnFromOffset(0, 16);
+        if (promptCol != 16) throw new Exception($"Expected logical column 16, got {promptCol}");
         Render(view, buffer.Process("\x1b[?1049h" +
             "┌──────────────────────────────────────┐\r\n" +
             "│ Hello سلام دنیا                      │\r\n" +
