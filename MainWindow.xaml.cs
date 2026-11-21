@@ -870,6 +870,62 @@ public partial class MainWindow : Window
         return foundPrompt ? col : 0;
     }
 
+    /// <summary>
+    /// True when the freshest rendered frame shows an inline prediction
+    /// (PSReadLine Predictive IntelliSense, fish/zsh autosuggestion, …):
+    /// grey/dim text after the cursor, running to the end of the prompt line,
+    /// with no normal-coloured text after it. Anything after the cursor that
+    /// is not grey means the cursor is mid-line, not at the end of the typed
+    /// input with a prediction after it. Alternate-screen apps never show a
+    /// shell prediction.
+    /// </summary>
+    private static bool HasInlinePrediction(TerminalSnapshot? snapshot)
+    {
+        if (snapshot is null || snapshot.Modes.AlternateScreen || !snapshot.CursorVisible)
+            return false;
+        if (snapshot.CursorRow < 0 || snapshot.CursorRow >= snapshot.Lines.Count)
+            return false;
+
+        var line = snapshot.Lines[snapshot.CursorRow];
+        var cursorCol = snapshot.CursorColumn;
+        var col = 0;
+        var sawPrediction = false;
+
+        foreach (var run in line.Runs)
+        {
+            var runWidth = 0;
+            foreach (var rune in run.Text.EnumerateRunes())
+                runWidth += TerminalBuffer.GetCellWidth(rune);
+
+            var runEnd = col + runWidth;
+            col = runEnd;
+
+            // Text ending at or before the cursor is typed input.
+            if (runEnd <= cursorCol)
+                continue;
+
+            if (!IsPredictionStyle(run.Style))
+                return false;
+
+            sawPrediction = true;
+        }
+
+        return sawPrediction;
+    }
+
+    private static bool IsPredictionStyle(TerminalStyle style)
+    {
+        // PSReadLine renders InlinePrediction dim, or in a grey (256-colour
+        // 238 = RGB 68,68,68; bright-black = 118,118,118; …). Typed text is
+        // the default foreground or syntax-highlighted, never dim grey.
+        if (style.Dim)
+            return true;
+        if (style.Foreground is { } foreground &&
+            foreground.Red == foreground.Green && foreground.Green == foreground.Blue)
+            return foreground.Red is >= 40 and <= 180;
+        return false;
+    }
+
     private bool IsSgrMouseTrackingEnabled() =>
         !TerminalTextBox.IsSelecting &&
         (Keyboard.Modifiers & ModifierKeys.Shift) == 0 && _lastRenderedSnapshot?.Modes is
@@ -1571,6 +1627,19 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         var controlPressed = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shiftPressed = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
+        // Log every Tab/Shift+Tab press, including plain Tab (previously
+        // unlogged: single-byte writes were not logged either), so a "Tab
+        // completed one word instead of the grey prediction" report can be
+        // traced to either "Tab never reached the session" or "Tab reached
+        // the session but PSReadLine treated it as Complete, not AcceptSuggestion".
+        if (probeKey == Key.Tab)
+        {
+            InputDebug.Log(
+                $"KEYDOWN Tab shift={shiftPressed} ctrl={controlPressed} " +
+                $"focus={TerminalTextBox.IsKeyboardFocusWithin} focused={Keyboard.FocusedElement} " +
+                $"hasSelection={TerminalTextBox.HasSelection} persian={KeyboardHelper.IsPersianKeyboard()}");
+        }
+
         if (controlPressed && shiftPressed && e.Key == Key.C)
         {
             CopySelection();
@@ -1641,6 +1710,31 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
         {
             if (key == Key.Left) key = Key.Right;
             else if (key == Key.Right) key = Key.Left;
+        }
+
+        // Plain Tab while an inline prediction is on screen accepts the
+        // prediction instead of completing one word: PSReadLine binds Tab to
+        // Complete, not to AcceptSuggestion, so a bare Tab ignores the grey
+        // suggestion and offers the next completion (Microsoft Learn).
+        // RightArrow is the key PSReadLine binds to ForwardChar/AcceptSuggestion,
+        // so send exactly what a physical RightArrow press would send.
+        // Shift+Tab (backtab) and Alt/Ctrl+Tab keep their own meanings.
+        if (key == Key.Tab && !shiftPressed && !controlPressed && !altPressed &&
+            HasInlinePrediction(_pendingSnapshot ?? _lastRenderedSnapshot))
+        {
+            var rightArrow = GetTerminalKeySequence(
+                Key.Right,
+                false,
+                false,
+                false,
+                _lastRenderedSnapshot?.Modes.ApplicationCursorKeys == true);
+            if (rightArrow is not null)
+            {
+                InputDebug.Log("TAB redirected to RightArrow: inline prediction on screen");
+                _session.Write(rightArrow);
+                e.Handled = true;
+                return;
+            }
         }
 
         var sequence = GetTerminalKeySequence(

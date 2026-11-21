@@ -332,7 +332,11 @@ private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
                 {
                     _inputWriter.Write(bytes, 0, bytes.Length);
                     _inputWriter.Flush();
-                    if (bytes.Length >= 2)
+                    // Single-byte writes were never logged, so a Tab (0x09) reaching
+                    // or not reaching the child was invisible in input_debug.log.
+                    // Log Tab explicitly; other 1-byte keystrokes stay unlogged
+                    // to avoid flooding the log on every typed character.
+                    if (bytes.Length >= 2 || (bytes.Length == 1 && bytes[0] == 0x09))
                         InputDebug.Log($"WRITE ok bytes={bytes.Length} hex={InputDebug.Hex(bytes)}");
                 }
                 catch (IOException exception)
