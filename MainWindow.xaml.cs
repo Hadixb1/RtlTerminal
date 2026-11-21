@@ -915,14 +915,21 @@ public partial class MainWindow : Window
 
     private static bool IsPredictionStyle(TerminalStyle style)
     {
-        // PSReadLine renders InlinePrediction dim, or in a grey (256-colour
-        // 238 = RGB 68,68,68; bright-black = 118,118,118; …). Typed text is
-        // the default foreground or syntax-highlighted, never dim grey.
+        // PSReadLine renders InlinePrediction dim (v2.3.4+, the default
+        // since PowerShell 7.4), or in 256-colour 238 = RGB 68,68,68 (older
+        // default; restore with Set-PSReadLineOption -Colors
+        // @{ InlinePrediction = "$([char]0x1b)[38;5;238m" }).
+        // Bright-black / DarkGray = RGB 118,118,118 is deliberately NOT a
+        // prediction: PSReadLine renders *parameters* in DarkGray, so
+        // accepting 118 as a prediction made v1.0.39 redirect every Tab to
+        // RightArrow at end-of-line (where RightArrow does nothing) and
+        // broke Tab outright. Typed text is the default foreground or
+        // syntax-highlighted, never dim and never 256-colour 238.
         if (style.Dim)
             return true;
         if (style.Foreground is { } foreground &&
             foreground.Red == foreground.Green && foreground.Green == foreground.Blue)
-            return foreground.Red is >= 40 and <= 180;
+            return foreground.Red is >= 40 and <= 90;
         return false;
     }
 
@@ -1754,14 +1761,40 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             else if (key == Key.Right) key = Key.Left;
         }
 
-        // v1.0.39 redirected plain Tab to RightArrow while a prediction was
-        // on screen, but that broke Tab outright (it did nothing at all), so
-        // the redirect is REVERTED: Tab is sent normally again. The prediction
-        // check stays as a diagnostic only — log what it sees on every plain
-        // Tab press so the false-positive that broke Tab can be found from
-        // input_debug.log instead of guessed at.
+        // Plain Tab while an inline prediction is on screen accepts the
+        // prediction instead of completing one word: PSReadLine binds Tab to
+        // Complete, not to AcceptSuggestion, so a bare Tab ignores the grey
+        // suggestion and offers the next completion (Microsoft Learn).
+        // RightArrow is the key PSReadLine binds to ForwardChar/AcceptSuggestion,
+        // so send exactly what a physical RightArrow press would send.
+        // Shift+Tab (backtab) and Alt/Ctrl+Tab keep their own meanings.
+        // v1.0.39 did this too but broke Tab outright: its prediction check
+        // accepted bright-black/DarkGray (118) as a prediction, and PSReadLine
+        // renders *parameters* in DarkGray, so every Tab was redirected to
+        // RightArrow at end-of-line (where it does nothing). v1.0.41 narrows
+        // IsPredictionStyle to Dim or 256-colour 238 (68) only, so a grey
+        // parameter no longer counts as a prediction. The diagnostic log
+        // stays, so a future false positive can be seen in input_debug.log.
         if (key == Key.Tab && !shiftPressed && !controlPressed && !altPressed)
+        {
             LogTabPredictionCheck(_pendingSnapshot ?? _lastRenderedSnapshot);
+            if (HasInlinePrediction(_pendingSnapshot ?? _lastRenderedSnapshot))
+            {
+                var rightArrow = GetTerminalKeySequence(
+                    Key.Right,
+                    false,
+                    false,
+                    false,
+                    _lastRenderedSnapshot?.Modes.ApplicationCursorKeys == true);
+                if (rightArrow is not null)
+                {
+                    InputDebug.Log("TAB redirected to RightArrow: inline prediction on screen");
+                    _session.Write(rightArrow);
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
 
         var sequence = GetTerminalKeySequence(
             key,
