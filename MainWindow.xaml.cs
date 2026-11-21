@@ -926,6 +926,48 @@ public partial class MainWindow : Window
         return false;
     }
 
+    /// <summary>
+    /// Diagnostic for the v1.0.39 Tab regression: log the runs after the
+    /// cursor on a plain Tab press, so a false-positive prediction detection
+    /// can be seen in input_debug.log (run text, foreground, dim flag).
+    /// Tab itself is NOT redirected here; it falls through to normal handling.
+    /// </summary>
+    private static void LogTabPredictionCheck(TerminalSnapshot? snapshot)
+    {
+        if (snapshot is null)
+        {
+            InputDebug.Log("TAB prediction check: snapshot NULL");
+            return;
+        }
+        if (snapshot.CursorRow < 0 || snapshot.CursorRow >= snapshot.Lines.Count)
+        {
+            InputDebug.Log($"TAB prediction check: cursor row {snapshot.CursorRow} out of range");
+            return;
+        }
+
+        var line = snapshot.Lines[snapshot.CursorRow];
+        var cursorCol = snapshot.CursorColumn;
+        var col = 0;
+        var parts = new StringBuilder();
+        foreach (var run in line.Runs)
+        {
+            var runWidth = 0;
+            foreach (var rune in run.Text.EnumerateRunes())
+                runWidth += TerminalBuffer.GetCellWidth(rune);
+
+            var runEnd = col + runWidth;
+            col = runEnd;
+            if (runEnd <= cursorCol)
+                continue;
+
+            parts.Append($"[after-cursor '{run.Text}' fg={run.Style.Foreground?.ToString() ?? "default"} dim={run.Style.Dim}] ");
+        }
+
+        InputDebug.Log(
+            $"TAB prediction check: hasPrediction={HasInlinePrediction(snapshot)} " +
+            $"cursor=({snapshot.CursorRow},{cursorCol}) {parts}");
+    }
+
     private bool IsSgrMouseTrackingEnabled() =>
         !TerminalTextBox.IsSelecting &&
         (Keyboard.Modifiers & ModifierKeys.Shift) == 0 && _lastRenderedSnapshot?.Modes is
@@ -1712,30 +1754,14 @@ _activeTab.RenderedSmartRtlEnabled = _renderedSmartRtlEnabled;
             else if (key == Key.Right) key = Key.Left;
         }
 
-        // Plain Tab while an inline prediction is on screen accepts the
-        // prediction instead of completing one word: PSReadLine binds Tab to
-        // Complete, not to AcceptSuggestion, so a bare Tab ignores the grey
-        // suggestion and offers the next completion (Microsoft Learn).
-        // RightArrow is the key PSReadLine binds to ForwardChar/AcceptSuggestion,
-        // so send exactly what a physical RightArrow press would send.
-        // Shift+Tab (backtab) and Alt/Ctrl+Tab keep their own meanings.
-        if (key == Key.Tab && !shiftPressed && !controlPressed && !altPressed &&
-            HasInlinePrediction(_pendingSnapshot ?? _lastRenderedSnapshot))
-        {
-            var rightArrow = GetTerminalKeySequence(
-                Key.Right,
-                false,
-                false,
-                false,
-                _lastRenderedSnapshot?.Modes.ApplicationCursorKeys == true);
-            if (rightArrow is not null)
-            {
-                InputDebug.Log("TAB redirected to RightArrow: inline prediction on screen");
-                _session.Write(rightArrow);
-                e.Handled = true;
-                return;
-            }
-        }
+        // v1.0.39 redirected plain Tab to RightArrow while a prediction was
+        // on screen, but that broke Tab outright (it did nothing at all), so
+        // the redirect is REVERTED: Tab is sent normally again. The prediction
+        // check stays as a diagnostic only — log what it sees on every plain
+        // Tab press so the false-positive that broke Tab can be found from
+        // input_debug.log instead of guessed at.
+        if (key == Key.Tab && !shiftPressed && !controlPressed && !altPressed)
+            LogTabPredictionCheck(_pendingSnapshot ?? _lastRenderedSnapshot);
 
         var sequence = GetTerminalKeySequence(
             key,
